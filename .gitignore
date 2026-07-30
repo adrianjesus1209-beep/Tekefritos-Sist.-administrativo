@@ -5,3 +5,7 @@
 /tmp/
 Thumbs.db
 .DS_Store
+
+# Archivos de credenciales locales (Excluidos de Git)
+/LOCAL_NO_SUBIR/
+*CREDENCIALES*
