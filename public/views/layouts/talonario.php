@@ -5,6 +5,8 @@ $modo           = $modo ?? 'nuevo';
 $id_factura     = $id_factura ?? 0;
 $id_documento   = $id_documento ?? 0;
 $datos          = $datos ?? [];
+$id_pedido      = $id_pedido ?? intval($_GET['id_pedido'] ?? 0);
+$id_contacto_origen = $id_contacto_origen ?? 0;
 
 $debug = intval($_GET['debug'] ?? 0);
 $esNota = ($tipo_documento === 'Nota de Entrega');
@@ -232,15 +234,45 @@ $titulo = $esNota ? 'Nota de Entrega' : 'Factura';
         .prod-table td { border-color: #A6A6A6 !important; }
         .prod-table th { border-color: #A6A6A6 !important; }
 <?php endif; ?>
+        .modal-clave-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;
+        }
+        .modal-clave-box {
+            background: white; padding: 18px 20px; border-radius: 8px; width: min(380px, 92vw);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2); font-family: Arial, Helvetica, sans-serif;
+        }
+        .modal-clave-header {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+            padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;
+        }
+        .modal-clave-header h2 { font-size: 14px; font-weight: bold; color: #1e293b; margin: 0; }
+        .modal-clave-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #64748b; line-height: 1; }
+        .modal-clave-body p { font-size: 12px; color: #475569; margin-bottom: 10px; line-height: 1.4; }
+        .modal-clave-input {
+            width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; outline: none;
+        }
+        .modal-clave-error { display: none; color: #dc3545; font-size: 11px; margin-top: 6px; font-weight: bold; }
+        .modal-clave-footer { display: flex; gap: 8px; margin-top: 14px; }
+        .modal-clave-btn-cancel {
+            flex: 1; padding: 7px 12px; font-size: 12px; border: 1px solid #cbd5e1; background: #f8fafc; color: #475569; border-radius: 4px; cursor: pointer;
+        }
+        .modal-clave-btn-ok {
+            flex: 1; padding: 7px 12px; font-size: 12px; border: 1px solid #dc3545; background: #dc3545; color: white; border-radius: 4px; font-weight: bold; cursor: pointer;
+        }
     </style>
 </head>
 <body>
 
 <!-- TOOLBAR -->
 <div class="toolbar no-print">
-    <span class="toolbar-title">Talonario de <?php echo $titulo; ?></span>
-    <button class="btn btn-outline-secondary btn-sm" onclick="window.history.back()">← Volver</button>
-    <button class="btn btn-danger btn-sm" onclick="generarPDF()"><?php echo $modo === 'editar' ? 'Regenerar PDF' : 'Generar PDF'; ?></button>
+    <span class="toolbar-title">Talonario de <?php echo $titulo; ?>
+        <?php if ($id_pedido > 0): ?>
+            <span style="font-size:11px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;padding:2px 8px;border-radius:4px;margin-left:8px;font-weight:normal;">Pedido #<?php echo $id_pedido; ?></span>
+        <?php endif; ?>
+    </span>
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.history.back()">Volver</button>
+    <button class="btn btn-danger btn-sm" onclick="solicitarClaveGenerarPDF()"><?php echo $modo === 'editar' ? 'Regenerar PDF' : 'Generar PDF'; ?></button>
     <span id="msg-accion"></span>
 </div>
 
@@ -250,6 +282,8 @@ $titulo = $esNota ? 'Nota de Entrega' : 'Factura';
 <div id="talonario-wrap">
 
     <input type="hidden" autocomplete="off" id="f_tipo_documento" value="<?php echo $tipo_documento; ?>">
+    <input type="hidden" autocomplete="off" id="_id_contacto" value="<?php echo htmlspecialchars($id_contacto_origen ?? ''); ?>">
+    <input type="hidden" autocomplete="off" id="_id_pedido" value="<?php echo htmlspecialchars($id_pedido ?? ''); ?>">
 
     <!-- ═══════════ EMISOR ═══════════ -->
 <?php if ($esNota):
@@ -695,7 +729,152 @@ function generarPDF() {
         btn.innerHTML = TALONARIO_MODO === 'editar' ? 'Regenerar PDF' : 'Generar PDF';
     });
 }
+
+function solicitarClaveGenerarPDF() {
+    var modalClave = document.getElementById('modal-clave-seguridad');
+    var inputClave = document.getElementById('input-clave-seguridad');
+    var errorMsg = document.getElementById('error-clave-mensaje');
+    var btnTexto = document.getElementById('btn-clave-texto');
+    var btnConfirmar = document.getElementById('btn-confirmar-clave');
+
+    if (!modalClave || !inputClave) return;
+
+    inputClave.value = '';
+    inputClave.type = 'password';
+    errorMsg.style.display = 'none';
+    btnConfirmar.disabled = false;
+    btnTexto.innerText = 'Confirmar';
+
+    modalClave.style.display = 'flex';
+    setTimeout(function() {
+        inputClave.focus();
+    }, 100);
+}
+
+function cerrarModalClave() {
+    var modalClave = document.getElementById('modal-clave-seguridad');
+    if (modalClave) modalClave.style.display = 'none';
+}
+
+async function validarClaveTalonario(e) {
+    e.preventDefault();
+    var inputClave = document.getElementById('input-clave-seguridad');
+    var errorMsg = document.getElementById('error-clave-mensaje');
+    var btnConfirmar = document.getElementById('btn-confirmar-clave');
+    var btnTexto = document.getElementById('btn-clave-texto');
+
+    var clave = inputClave ? inputClave.value.trim() : '';
+    if (!clave) {
+        errorMsg.textContent = 'Por favor, ingresa tu contraseña.';
+        errorMsg.style.display = 'block';
+        if (inputClave) inputClave.focus();
+        return;
+    }
+
+    btnConfirmar.disabled = true;
+    btnTexto.innerText = 'Verificando...';
+    errorMsg.style.display = 'none';
+
+    try {
+        var formData = new URLSearchParams();
+        formData.append('clave', clave);
+
+        var resp = await fetch('index.php?action=ajax-verificar-clave', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData.toString()
+        });
+
+        var data = await resp.json();
+
+        if (data && data.success) {
+            cerrarModalClave();
+            generarPDF();
+        } else {
+            btnConfirmar.disabled = false;
+            btnTexto.innerText = 'Confirmar';
+            errorMsg.textContent = (data && data.error) ? data.error : 'Contraseña incorrecta. Inténtalo de nuevo.';
+            errorMsg.style.display = 'block';
+            if (inputClave) {
+                inputClave.focus();
+                inputClave.select();
+            }
+        }
+    } catch (err) {
+        btnConfirmar.disabled = false;
+        btnTexto.innerText = 'Confirmar';
+        errorMsg.textContent = 'Error al comunicarse con el servidor.';
+        errorMsg.style.display = 'block';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var btnToggle = document.getElementById('btn-toggle-ver-clave');
+    if (btnToggle) {
+        btnToggle.addEventListener('click', function() {
+            var inp = document.getElementById('input-clave-seguridad');
+            if (inp) {
+                inp.type = inp.type === 'password' ? 'text' : 'password';
+            }
+        });
+    }
+
+    var inp = document.getElementById('input-clave-seguridad');
+    if (inp) {
+        inp.addEventListener('input', function() {
+            var err = document.getElementById('error-clave-mensaje');
+            if (err) err.style.display = 'none';
+        });
+    }
+
+    window.addEventListener('click', function(e) {
+        var modalClave = document.getElementById('modal-clave-seguridad');
+        if (modalClave && e.target === modalClave) {
+            cerrarModalClave();
+        }
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            var modalClave = document.getElementById('modal-clave-seguridad');
+            if (modalClave && modalClave.style.display === 'flex') {
+                cerrarModalClave();
+            }
+        }
+    });
+});
 </script>
+
+<!-- MODAL CONFIRMACION DE CONTRASEÑA EN TALONARIO -->
+<div id="modal-clave-seguridad" class="modal-clave-overlay">
+    <div class="modal-clave-box">
+        <div class="modal-clave-header">
+            <h2>Confirmar con Contraseña</h2>
+            <button type="button" class="modal-clave-close" onclick="cerrarModalClave()">&times;</button>
+        </div>
+        <form onsubmit="validarClaveTalonario(event)">
+            <div class="modal-clave-body">
+                <p>Por seguridad, ingresa tu contraseña de usuario para generar y guardar el documento:</p>
+                <div style="position:relative;">
+                    <input type="password" id="input-clave-seguridad" class="modal-clave-input" placeholder="Contraseña de usuario" required>
+                    <button type="button" id="btn-toggle-ver-clave" title="Mostrar/Ocultar contraseña"
+                        style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:2px 4px;font-size:12px;line-height:1;">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/></svg>
+                    </button>
+                </div>
+                <div id="error-clave-mensaje" class="modal-clave-error">
+                    Contraseña incorrecta. Inténtalo de nuevo.
+                </div>
+            </div>
+            <div class="modal-clave-footer">
+                <button type="button" class="modal-clave-btn-cancel" onclick="cerrarModalClave()">Cancelar</button>
+                <button type="submit" id="btn-confirmar-clave" class="modal-clave-btn-ok">
+                    <span id="btn-clave-texto">Confirmar</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
 </body>
 </html>

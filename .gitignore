@@ -9,3 +9,7 @@ Thumbs.db
 # Archivos de credenciales locales (Excluidos de Git)
 /LOCAL_NO_SUBIR/
 *CREDENCIALES*
+/scratch/
+public/img/*copia*
+public/img/logo_talonario1.png
+public/img/logo_talonario.webp

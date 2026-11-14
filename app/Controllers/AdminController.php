@@ -71,13 +71,13 @@ class AdminController {
 
         $total_productos = Database::fetchColumn("SELECT COUNT(*) FROM productos");
         $ventas_totales = Database::fetchColumn("SELECT COALESCE(SUM(total),0) FROM pedidos WHERE estado='Completado'");
-        $res_alertas_productos = Database::query("SELECT nombre, stock, stock_minimo FROM productos WHERE stock < stock_minimo AND estado != 'Inactivo'");
+        $res_alertas_productos = Database::query("SELECT nombre, stock, stock_minimo FROM productos WHERE stock < stock_minimo AND estado NOT IN ('Inactivo', 'Papelera')");
         $alertas_productos = Database::getResult($res_alertas_productos);
         $res_alertas_materia = Database::query("SELECT nombre, cantidad, unidad, minimo FROM materia_prima WHERE cantidad < minimo");
         $alertas_materia = Database::getResult($res_alertas_materia);
         $total_alertas = mysqli_num_rows($alertas_productos) + mysqli_num_rows($alertas_materia);
 
-        $rentabilidad_total = Database::fetchColumn("SELECT COALESCE(SUM(precio - costo), 0) FROM productos WHERE estado != 'Inactivo' AND precio > 0 AND costo > 0") ?? 0;
+        $rentabilidad_total = Database::fetchColumn("SELECT COALESCE(SUM(precio - costo), 0) FROM productos WHERE estado NOT IN ('Inactivo', 'Papelera') AND precio > 0 AND costo > 0") ?? 0;
 
         $res_top = Database::query(
             "SELECT p.nombre, SUM(dp.cantidad) as total_ventas 
@@ -113,7 +113,7 @@ class AdminController {
 
         if ($vista === 'Productos') {
             $res_datos = Database::query(
-                "SELECT p.*, c.nombre as categoria_nombre FROM productos p LEFT JOIN categorias c ON p.categoria_id = c.id WHERE p.estado != 'Inactivo' ORDER BY p.id DESC"
+                "SELECT p.*, c.nombre as categoria_nombre FROM productos p LEFT JOIN categorias c ON p.categoria_id = c.id WHERE p.estado != 'Papelera' ORDER BY p.id DESC"
             );
             $datos = Database::getResult($res_datos);
         } elseif ($vista === 'Documentos') {
@@ -126,7 +126,7 @@ class AdminController {
                 $archivo = $d['archivo_real'];
                 if (!empty($archivo) && !file_exists($ruta_docs . $archivo) && !file_exists($ruta_fact . $archivo)) {
                     // Archivo eliminado del disco → auto-papelera
-                    Database::query("UPDATE documentos SET estado = 'Inactivo' WHERE id = ?", [$d['id']]);
+                    Database::query("UPDATE documentos SET estado = 'Papelera' WHERE id = ?", [$d['id']]);
                     continue;
                 }
                 if (!empty($archivo)) {
@@ -205,6 +205,39 @@ class AdminController {
         exit();
     }
 
+    public static function ajaxVerificarClave() {
+        Session::redirectIfNotAdmin();
+        header('Content-Type: application/json');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'error' => 'Método no permitido.']);
+            exit();
+        }
+
+        $clave = trim($_POST['clave'] ?? '');
+        if ($clave === '') {
+            echo json_encode(['success' => false, 'error' => 'Por favor, ingresa tu contraseña.']);
+            exit();
+        }
+
+        $usuario_id = Session::id();
+        if (!$usuario_id) {
+            echo json_encode(['success' => false, 'error' => 'Sesión expirada. Inicia sesión nuevamente.']);
+            exit();
+        }
+
+        $res = Database::query("SELECT contrasena FROM usuarios WHERE id = ?", [$usuario_id]);
+        $user = Database::fetch($res);
+
+        if ($user && password_verify($clave, $user['contrasena'])) {
+            $_SESSION['clave_confirmada_tiempo'] = time();
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'Contraseña incorrecta. Inténtalo de nuevo.']);
+        }
+        exit();
+    }
+
     public static function llenarTalonario() {
         Session::redirectIfNotAdmin();
         if (Session::rol() === 'vendedor') {
@@ -216,6 +249,8 @@ class AdminController {
         $tipo_param = $_GET['tipo'] ?? '';
         $tipo_documento = ($tipo_param === 'Nota de Entrega') ? 'Nota de Entrega' : 'Factura';
         $id_documento = intval($_GET['id_documento'] ?? 0);
+        $id_pedido = intval($_GET['id_pedido'] ?? 0);
+        $id_contacto_origen = null;
 
         if ($id_documento > 0) {
             // Cargar datos desde la BD para editar
@@ -229,6 +264,7 @@ class AdminController {
                     }
                 }
                 $tipo_documento = $saved['_tipo_documento'] ?? $doc['tipo'] ?? $tipo_documento;
+                $id_contacto_origen = $doc['id_contacto'] ?? null;
             } else {
                 // Sin datos guardados: formulario vacío
                 $datos = self::datosVacios();
@@ -237,6 +273,124 @@ class AdminController {
             $id_factura = 0;
             $numero = intval($_GET['numero'] ?? 0);
             $num_formateado = str_pad($numero, 6, '0', STR_PAD_LEFT);
+        } elseif ($id_pedido > 0) {
+            // Cargar datos a partir del Pedido
+            $res_ped = Database::query(
+                "SELECT p.*, c.id as contacto_id, c.nombre as cli_nombre, c.cedula as cli_rif, c.telefono as cli_tel, c.direccion as cli_dir 
+                 FROM pedidos p 
+                 LEFT JOIN contactos c ON p.id_contacto = c.id 
+                 WHERE p.id = ?",
+                [$id_pedido]
+            );
+            $pedido = Database::fetch($res_ped);
+            $datos = self::datosVacios();
+
+            if ($pedido) {
+                $id_contacto_origen = $pedido['contacto_id'] ?? null;
+
+                // Datos de cliente
+                $cli_nombre = !empty($pedido['cli_nombre']) ? $pedido['cli_nombre'] : 'Mostrador (General)';
+                $cli_rif    = !empty($pedido['cli_rif']) ? $pedido['cli_rif'] : '';
+                $cli_tel    = !empty($pedido['cli_tel']) ? $pedido['cli_tel'] : ($pedido['pago_movil_telefono'] ?? '');
+                $cli_dir    = !empty($pedido['direccion']) ? $pedido['direccion'] : (!empty($pedido['cli_dir']) ? $pedido['cli_dir'] : 'Valencia, Edo. Carabobo');
+
+                $datos['f_cliente_nombre']    = $cli_nombre;
+                $datos['f_cliente_rif']       = $cli_rif;
+                $datos['f_cliente_tel']       = $cli_tel;
+                $datos['f_cliente_domicilio'] = $cli_dir;
+                $datos['f_domicilio_fiscal']  = $cli_dir;
+
+                // Fechas
+                $ts = !empty($pedido['fecha']) ? strtotime($pedido['fecha']) : time();
+                $datos['f_lugar']          = 'Valencia';
+                $datos['f_dia']            = date('d', $ts);
+                $datos['f_mes']            = date('m', $ts);
+                $datos['f_anio']           = date('Y', $ts);
+                $datos['f_fecha_completa'] = date('d/m/Y', $ts);
+                $datos['f_fecha_emision']  = date('d/m/Y', $ts);
+                $datos['f_fecha_escrita']  = date('d/m/Y', $ts);
+                $datos['f_fecha_venc']     = date('d/m/Y', strtotime('+15 days', $ts));
+
+                // Condiciones y vendedor
+                $datos['f_condiciones_pago'] = ($pedido['tipo_entrega'] === 'Local') ? 'Contado' : 'Contra entrega';
+                $datos['f_credito']          = 'Contado';
+                $datos['f_vendedor']         = Session::nombre() ?? 'Admin';
+
+                // Si es Nota de Entrega, sugerir el ID del pedido
+                $datos['f_nota_numero_val']  = str_pad($id_pedido, 6, '0', STR_PAD_LEFT);
+
+                // Banco y forma de pago si existen
+                if (!empty($pedido['banco'])) {
+                    $datos['f_refbco'] = $pedido['banco'];
+                    $datos['f_mpago']  = 'transf';
+                } elseif (!empty($pedido['pago_movil_banco'])) {
+                    $datos['f_refbco'] = $pedido['pago_movil_banco'];
+                    $datos['f_mpago']  = 'pago movil';
+                } else {
+                    $datos['f_mpago']  = 'efectivo';
+                }
+
+                // Cargar detalles de productos del pedido
+                $res_items = Database::query(
+                    "SELECT dp.*, pr.codigo, pr.nombre as prod_nombre, pr.peso, pr.aplica_iva 
+                     FROM detalles_pedido dp 
+                     LEFT JOIN productos pr ON dp.id_producto = pr.id 
+                     WHERE dp.id_pedido = ? 
+                     ORDER BY dp.id ASC",
+                    [$id_pedido]
+                );
+                $items = Database::fetchAll($res_items);
+
+                $renglon = 1;
+                $subtotal_base = 0;
+                $total_iva = 0;
+                $tasa_iva_aplicada = 0;
+
+                foreach ($items as $item) {
+                    if ($renglon > 8) break; // Límite del formato físico de 8 renglones
+
+                    $cant = floatval($item['cantidad']);
+                    $pu = floatval($item['precio_unitario']);
+                    $ttl_renglon = round($cant * $pu, 2);
+                    $iva_pct = floatval($item['iva_aplicado'] ?? 0);
+
+                    if ($iva_pct > 0) {
+                        $tasa_iva_aplicada = $iva_pct;
+                        $total_iva += round($ttl_renglon * ($iva_pct / 100), 2);
+                    }
+                    $subtotal_base += $ttl_renglon;
+
+                    $codigo = !empty($item['codigo']) ? $item['codigo'] : ('PROD-' . $item['id_producto']);
+                    $desc   = !empty($item['prod_nombre']) ? $item['prod_nombre'] : 'Producto';
+
+                    $datos['f_codigo_' . $renglon]   = $codigo;
+                    $datos['f_concepto_' . $renglon] = $desc;
+                    $datos['f_cant_' . $renglon]     = $cant;
+                    $datos['f_unidad_' . $renglon]   = 'uds';
+                    $datos['f_vlr_' . $renglon]      = number_format($pu, 2, '.', '');
+                    $datos['f_nvl_' . $renglon]      = number_format($pu, 2, '.', '');
+                    $datos['f_ttl_' . $renglon]      = number_format($ttl_renglon, 2, '.', '');
+
+                    $renglon++;
+                }
+
+                $total_final = floatval($pedido['total']);
+                if ($total_final <= 0) {
+                    $total_final = $subtotal_base + $total_iva;
+                }
+
+                $datos['f_ssub']     = number_format($subtotal_base, 2, '.', '');
+                $datos['f_bimp']     = number_format($subtotal_base, 2, '.', '');
+                $datos['f_sst_nota'] = number_format($subtotal_base, 2, '.', '');
+                $datos['f_nfn_nota'] = number_format($total_final, 2, '.', '');
+                $datos['f_ivat']     = ($tasa_iva_aplicada > 0) ? (rtrim(rtrim(number_format($tasa_iva_aplicada, 2), '0'), '.') . '%') : '0%';
+                $datos['f_ivam']     = number_format($total_iva, 2, '.', '');
+                $datos['f_ttl']      = number_format($total_final, 2, '.', '');
+            }
+            $modo = 'nuevo';
+            $id_factura = 0;
+            $numero = 0;
+            $num_formateado = '000000';
         } else {
             if ($tipo_documento === 'Nota de Entrega') {
                 $datos = self::datosVacios();
@@ -313,15 +467,17 @@ class AdminController {
             $nombre_archivo_db = 'Factura #' . $num_formateado;
         }
 
+        $id_contacto = !empty($datos['_id_contacto']) ? intval($datos['_id_contacto']) : null;
+
         if ($id_documento > 0) {
             Database::query(
-                "UPDATE documentos SET nombre_archivo = ?, tipo = ?, datos = ? WHERE id = ?",
-                [$nombre_archivo_db, $tipo_documento, $datos_json, $id_documento]
+                "UPDATE documentos SET nombre_archivo = ?, tipo = ?, datos = ?, id_contacto = COALESCE(?, id_contacto) WHERE id = ?",
+                [$nombre_archivo_db, $tipo_documento, $datos_json, $id_contacto, $id_documento]
             );
         } else {
             Database::query(
                 "INSERT INTO documentos (id_contacto, nombre_archivo, tipo, id_usuario, estado, datos) VALUES (?, ?, ?, ?, 'Activo', ?)",
-                [null, $nombre_archivo_db, $tipo_documento, $id_usuario, $datos_json]
+                [$id_contacto, $nombre_archivo_db, $tipo_documento, $id_usuario, $datos_json]
             );
             $id_documento = Database::insertId();
         }
@@ -333,16 +489,16 @@ class AdminController {
 
     private static function getQueryForVista(string $vista) {
         $queries = [
-            'Productos'   => ['sql' => "SELECT p.*, c.nombre as categoria_nombre FROM productos p LEFT JOIN categorias c ON p.categoria_id = c.id WHERE p.estado != 'Inactivo' ORDER BY p.id DESC"],
+            'Productos'   => ['sql' => "SELECT p.*, c.nombre as categoria_nombre FROM productos p LEFT JOIN categorias c ON p.categoria_id = c.id WHERE p.estado != 'Papelera' ORDER BY p.id DESC"],
             'Categorias'  => ['sql' => "SELECT * FROM categorias ORDER BY id ASC"],
-            'Clientes'    => ['sql' => "SELECT * FROM contactos WHERE tipo='Cliente' AND estado != 'Inactivo' ORDER BY id DESC"],
-            'Proveedores' => ['sql' => "SELECT * FROM contactos WHERE tipo='Proveedor' AND estado != 'Inactivo' ORDER BY id DESC"],
-            'Pedidos'     => ['sql' => "SELECT p.*, c.nombre as cliente_nombre, (SELECT GROUP_CONCAT(CONCAT('[', COALESCE(pr.codigo, ''), '] ', pr.nombre, ' (', dp.cantidad, ')') SEPARATOR ', ') FROM detalles_pedido dp JOIN productos pr ON dp.id_producto = pr.id WHERE dp.id_pedido = p.id) as items FROM pedidos p LEFT JOIN contactos c ON p.id_contacto = c.id WHERE p.estado != 'Inactivo' ORDER BY p.id DESC"],
-            'Perdidas'    => ['sql' => "SELECT p.*, pr.nombre as prod_nombre FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.estado != 'Inactivo' ORDER BY p.fecha DESC"],
-            'MateriaPrima'=> ['sql' => "SELECT mp.*, c.nombre as proveedor_nombre FROM materia_prima mp LEFT JOIN contactos c ON mp.id_proveedor = c.id WHERE mp.estado != 'Inactivo' ORDER BY mp.nombre ASC"],
-            'Personal'    => ['sql' => "SELECT id, nombre, correo, rol FROM usuarios WHERE estado != 'Inactivo' ORDER BY rol DESC, nombre ASC"],
-            'Papelera'    => ['sql' => "(SELECT id, nombre, 'Productos' as tipo_orig, 'Sistema' as info_1 FROM productos WHERE estado = 'Inactivo') UNION (SELECT id, nombre, tipo as tipo_orig, correo as info_1 FROM contactos WHERE estado = 'Inactivo') UNION (SELECT id, nombre_archivo as nombre, 'Documentos' as tipo_orig, tipo as info_1 FROM documentos WHERE estado = 'Inactivo') UNION (SELECT id, nombre, 'MateriaPrima' as tipo_orig, 'Sistema' as info_1 FROM materia_prima WHERE estado = 'Inactivo') UNION (SELECT p.id, CONCAT(pr.nombre, ' (', p.cantidad, ' uds)') as nombre, 'Perdidas' as tipo_orig, p.motivo as info_1 FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.estado = 'Inactivo') UNION (SELECT id, CONCAT('Pedido #', id) as nombre, 'Pedidos' as tipo_orig, 'Sistema' as info_1 FROM pedidos WHERE estado = 'Inactivo') UNION (SELECT id, nombre, 'Personal' as tipo_orig, rol as info_1 FROM usuarios WHERE estado = 'Inactivo')"],
-            'R. Clientes' => ['sql' => "SELECT c.id, c.nombre, c.telefono, c.correo, COUNT(p.id) as total_pedidos, COALESCE(SUM(CASE WHEN p.estado = 'Completado' THEN p.total ELSE 0 END), 0) as total_gastado, MAX(p.fecha) as ultima_compra, COALESCE(AVG(CASE WHEN p.estado = 'Completado' THEN p.total END), 0) as ticket_promedio FROM contactos c LEFT JOIN pedidos p ON c.id = p.id_contacto WHERE c.tipo = 'Cliente' AND c.estado != 'Inactivo' GROUP BY c.id ORDER BY total_gastado DESC"],
+            'Clientes'    => ['sql' => "SELECT * FROM contactos WHERE tipo='Cliente' AND estado != 'Papelera' ORDER BY id DESC"],
+            'Proveedores' => ['sql' => "SELECT * FROM contactos WHERE tipo='Proveedor' AND estado != 'Papelera' ORDER BY id DESC"],
+            'Pedidos'     => ['sql' => "SELECT p.*, c.nombre as cliente_nombre, (SELECT GROUP_CONCAT(CONCAT('[', COALESCE(pr.codigo, ''), '] ', pr.nombre, ' (', dp.cantidad, ')') SEPARATOR ', ') FROM detalles_pedido dp JOIN productos pr ON dp.id_producto = pr.id WHERE dp.id_pedido = p.id) as items FROM pedidos p LEFT JOIN contactos c ON p.id_contacto = c.id WHERE p.estado != 'Papelera' ORDER BY p.id DESC"],
+            'Perdidas'    => ['sql' => "SELECT p.*, pr.nombre as prod_nombre FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.estado != 'Papelera' ORDER BY p.fecha DESC"],
+            'MateriaPrima'=> ['sql' => "SELECT mp.*, c.nombre as proveedor_nombre, c.cedula as proveedor_cedula FROM materia_prima mp LEFT JOIN contactos c ON mp.id_proveedor = c.id WHERE mp.estado != 'Papelera' ORDER BY mp.nombre ASC"],
+            'Personal'    => ['sql' => "SELECT id, nombre, cedula, telefono, correo, rol, estado, banco, cuenta_bancaria, pago_movil_banco, pago_movil_telefono, pago_movil_cedula FROM usuarios WHERE estado != 'Papelera' ORDER BY rol DESC, nombre ASC"],
+            'Papelera'    => ['sql' => "(SELECT id, nombre, 'Productos' as tipo_orig, 'Sistema' as info_1 FROM productos WHERE estado = 'Papelera') UNION (SELECT id, nombre, tipo as tipo_orig, correo as info_1 FROM contactos WHERE estado = 'Papelera') UNION (SELECT id, nombre_archivo as nombre, 'Documentos' as tipo_orig, tipo as info_1 FROM documentos WHERE estado = 'Papelera') UNION (SELECT id, nombre, 'MateriaPrima' as tipo_orig, 'Sistema' as info_1 FROM materia_prima WHERE estado = 'Papelera') UNION (SELECT p.id, CONCAT(pr.nombre, ' (', p.cantidad, ' uds)') as nombre, 'Perdidas' as tipo_orig, p.motivo as info_1 FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.estado = 'Papelera') UNION (SELECT id, CONCAT('Pedido #', id) as nombre, 'Pedidos' as tipo_orig, 'Sistema' as info_1 FROM pedidos WHERE estado = 'Papelera') UNION (SELECT id, nombre, 'Personal' as tipo_orig, rol as info_1 FROM usuarios WHERE estado = 'Papelera')"],
+            'R. Clientes' => ['sql' => "SELECT c.id, c.nombre, c.telefono, c.correo, COUNT(p.id) as total_pedidos, COALESCE(SUM(CASE WHEN p.estado = 'Completado' THEN p.total ELSE 0 END), 0) as total_gastado, MAX(p.fecha) as ultima_compra, COALESCE(AVG(CASE WHEN p.estado = 'Completado' THEN p.total END), 0) as ticket_promedio FROM contactos c LEFT JOIN pedidos p ON c.id = p.id_contacto WHERE c.tipo = 'Cliente' AND c.estado != 'Papelera' GROUP BY c.id ORDER BY total_gastado DESC"],
             'R. IVA' => ['sql' => "SELECT 
                 DATE_FORMAT(p.fecha, '%Y-%m') as mes,
                 COUNT(DISTINCT p.id) as num_pedidos,
@@ -356,7 +512,7 @@ class AdminController {
             WHERE p.estado = 'Completado'
             GROUP BY DATE_FORMAT(p.fecha, '%Y-%m')
             ORDER BY mes DESC"],
-            'R. Perdidas' => ['sql' => "SELECT p.id, pr.nombre as prod_nombre, p.cantidad, p.motivo, DATE_FORMAT(p.fecha, '%d/%m/%Y %H:%i') as fecha_fmt FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.estado != 'Inactivo' ORDER BY p.fecha DESC"],
+            'R. Perdidas' => ['sql' => "SELECT p.id, pr.nombre as prod_nombre, p.cantidad, p.motivo, DATE_FORMAT(p.fecha, '%d/%m/%Y %H:%i') as fecha_fmt FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.estado != 'Papelera' ORDER BY p.fecha DESC"],
             'Bitácora'    => ['sql' => "SELECT b.*, u.nombre as usuario_nombre FROM bitacora b LEFT JOIN usuarios u ON b.id_usuario = u.id ORDER BY b.fecha DESC LIMIT 500"],
 
         ];
@@ -393,7 +549,30 @@ class AdminController {
         $accion = $_POST['accion'] ?? '';
         $modulo_post = $_POST['modulo'] ?? ($_POST['modulo_orig'] ?? $vista);
 
-        if ($accion === 'eliminar' && $rol_usuario !== 'vendedor') {
+        // Verificación de seguridad: Todas las acciones de eliminación o desactivación requieren confirmación previa de contraseña
+        $acciones_requieren_clave = [
+            'desactivar',
+            'mover_papelera',
+            'eliminar',
+            'eliminar_perdida',
+            'eliminar_documento',
+            'eliminar_permanente',
+            'eliminar_permanente_documento',
+            'eliminar_categoria',
+            'vaciar_papelera'
+        ];
+
+        if (in_array($accion, $acciones_requieren_clave) && $rol_usuario !== 'vendedor') {
+            $tiempo_confirmado = $_SESSION['clave_confirmada_tiempo'] ?? 0;
+            if (time() - $tiempo_confirmado > 300) {
+                $redir = ($vista === 'Papelera') ? 'Papelera' : $modulo_post;
+                header("Location: index.php?action=admin&vista=$redir&exito=0&error=" . urlencode("Se requiere confirmación con contraseña para autorizar esta operación."));
+                exit();
+            }
+            unset($_SESSION['clave_confirmada_tiempo']);
+        }
+
+        if (in_array($accion, ['desactivar', 'mover_papelera', 'eliminar']) && $rol_usuario !== 'vendedor') {
             $id = intval($_POST['id']);
             $tabla = '';
             if (in_array($modulo_post, ['Productos'])) $tabla = 'productos';
@@ -402,20 +581,46 @@ class AdminController {
             if ($modulo_post === 'Perdidas') $tabla = 'perdidas';
             if ($modulo_post === 'Personal') $tabla = 'usuarios';
             if ($modulo_post === 'Pedidos') $tabla = 'pedidos';
+            if ($modulo_post === 'Documentos') $tabla = 'documentos';
 
             if ($tabla) {
                 if ($modulo_post === 'Personal' && ($id === Session::id() || $id === 1)) {
                     // Evita bloquearse a sí mismo o al admin principal
-                    header("Location: index.php?action=admin&vista=$modulo_post&exito=0&error=" . urlencode('No puedes eliminarte a ti mismo.'));
+                    header("Location: index.php?action=admin&vista=$modulo_post&exito=0&error=" . urlencode('No puedes desactivar o eliminarte a ti mismo.'));
                     exit();
                 }
                 
-                $nom_res = Database::query("SELECT " . ($tabla === 'pedidos' ? "id as nombre" : "nombre") . " FROM $tabla WHERE id=?", [$id]);
+                $col_nom = ($tabla === 'pedidos') ? 'id' : (($tabla === 'documentos') ? 'nombre_archivo' : 'nombre');
+                $nom_res = Database::query("SELECT $col_nom FROM $tabla WHERE id=?", [$id]);
                 $nom_fila = Database::fetch($nom_res);
-                $nombre_reg = $nom_fila ? ($tabla === 'pedidos' ? "Pedido #" . $nom_fila['nombre'] : $nom_fila['nombre']) : "ID $id";
+                $nombre_reg = $nom_fila ? ($tabla === 'pedidos' ? "Pedido #" . $nom_fila[$col_nom] : $nom_fila[$col_nom]) : "ID $id";
                 
-                Database::query("UPDATE $tabla SET estado = 'Inactivo' WHERE id = ?", [$id]);
-                self::logBitacora('Mover a Papelera', "Movió a papelera $nombre_reg ($modulo_post)", $tabla, $id);
+                if ($accion === 'desactivar') {
+                    Database::query("UPDATE $tabla SET estado = 'Inactivo' WHERE id = ?", [$id]);
+                    self::logBitacora('Desactivar', "Desactivó $nombre_reg ($modulo_post)", $tabla, $id);
+                } elseif ($accion === 'mover_papelera') {
+                    Database::query("UPDATE $tabla SET estado = 'Papelera' WHERE id = ?", [$id]);
+                    self::logBitacora('Mover a Papelera', "Movió a papelera $nombre_reg ($modulo_post)", $tabla, $id);
+                } elseif ($accion === 'eliminar') {
+                    // Si es pedido, pérdida o documento: directo a papelera (basura)
+                    if (in_array($modulo_post, ['Pedidos', 'Perdidas', 'Documentos'])) {
+                        Database::query("UPDATE $tabla SET estado = 'Papelera' WHERE id = ?", [$id]);
+                        self::logBitacora('Mover a Papelera', "Movió a papelera $nombre_reg ($modulo_post)", $tabla, $id);
+                    } else {
+                        // Para entidades maestras: si ya está Inactivo, se envía a Papelera; si no, primero se desactiva
+                        $est_res = Database::query("SELECT estado FROM $tabla WHERE id = ?", [$id]);
+                        $est_fila = Database::fetch($est_res);
+                        $est_actual = $est_fila ? $est_fila['estado'] : '';
+
+                        if ($est_actual === 'Inactivo') {
+                            Database::query("UPDATE $tabla SET estado = 'Papelera' WHERE id = ?", [$id]);
+                            self::logBitacora('Mover a Papelera', "Movió a papelera $nombre_reg ($modulo_post)", $tabla, $id);
+                        } else {
+                            Database::query("UPDATE $tabla SET estado = 'Inactivo' WHERE id = ?", [$id]);
+                            self::logBitacora('Desactivar', "Desactivó $nombre_reg ($modulo_post)", $tabla, $id);
+                        }
+                    }
+                }
                 header("Location: index.php?action=admin&vista=$modulo_post&exito=1");
                 exit();
             }
@@ -428,9 +633,10 @@ class AdminController {
                 'Productos' => 'productos',
                 'MateriaPrima' => 'materia_prima',
                 'Perdidas' => 'perdidas',
-                'Cliente', 'Proveedor' => 'contactos',
+                'Cliente', 'Proveedor', 'Clientes', 'Proveedores' => 'contactos',
                 'Personal' => 'usuarios',
                 'Pedidos' => 'pedidos',
+                'Documentos' => 'documentos',
                 default => ''
             };
             if ($tabla) {
@@ -439,6 +645,8 @@ class AdminController {
                     $nom_res = Database::query("SELECT CONCAT(pr.nombre, ' (', p.cantidad, ' uds)') as nombre FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.id=?", [$id]);
                 } else if ($modulo_orig === 'Pedidos') {
                     $nom_res = Database::query("SELECT id as nombre FROM pedidos WHERE id=?", [$id]);
+                } else if ($modulo_orig === 'Documentos') {
+                    $nom_res = Database::query("SELECT nombre_archivo as nombre FROM documentos WHERE id=?", [$id]);
                 } else {
                     $nom_res = Database::query("SELECT nombre FROM $tabla WHERE id=?", [$id]);
                 }
@@ -448,11 +656,16 @@ class AdminController {
                 
                 if ($modulo_orig === 'Pedidos') {
                     Database::query("DELETE FROM detalles_pedido WHERE id_pedido = ?", [$id]);
-                } else if (in_array($modulo_orig, ['Cliente', 'Proveedor'])) {
+                } else if (in_array($modulo_orig, ['Cliente', 'Proveedor', 'Clientes', 'Proveedores'])) {
                     Database::query("UPDATE pedidos SET id_contacto = NULL WHERE id_contacto = ?", [$id]);
                 } else if ($modulo_orig === 'Productos') {
                     Database::query("UPDATE detalles_pedido SET id_producto = NULL WHERE id_producto = ?", [$id]);
                     Database::query("UPDATE perdidas SET id_producto = NULL WHERE id_producto = ?", [$id]);
+                } else if ($modulo_orig === 'Documentos') {
+                    Documento::eliminarPermanente($id);
+                    self::logBitacora('Eliminar permanente', "Eliminó definitivamente documento $nombre_reg", 'documentos', $id);
+                    header("Location: index.php?action=admin&vista=Papelera&exito=1");
+                    exit();
                 }
                 
                 Database::query("DELETE FROM $tabla WHERE id = ?", [$id]);
@@ -567,15 +780,38 @@ class AdminController {
             $id = intval($_POST['id']);
             $nombre = trim($_POST['nombre']);
             $tipo = $_POST['tipo'];
-            $tel = $_POST['telefono'];
-            $correo = trim($_POST['correo']);
-            $direccion = trim($_POST['direccion']);
+            $cedula = trim($_POST['cedula'] ?? '');
+            $tel = trim($_POST['telefono'] ?? '');
+            $correo = trim($_POST['correo'] ?? '');
+            $direccion = trim($_POST['direccion'] ?? '');
             $categoria = ($tipo === 'Cliente') ? ($_POST['categoria'] ?? 'Regular') : null;
+            $banco = trim($_POST['banco'] ?? '');
+            $cuenta_bancaria = trim($_POST['cuenta_bancaria'] ?? '');
+            $pago_movil_banco = trim($_POST['pago_movil_banco'] ?? '');
+            $pago_movil_telefono = trim($_POST['pago_movil_telefono'] ?? '');
+            $pago_movil_cedula = trim($_POST['pago_movil_cedula'] ?? '');
+
+            // Verificación de contraseña al registrar o guardar cliente/proveedor
+            if (in_array($tipo, ['Cliente', 'Proveedor'])) {
+                $tiempo_confirmado = $_SESSION['clave_confirmada_tiempo'] ?? 0;
+                if (time() - $tiempo_confirmado > 300) {
+                    header("Location: index.php?action=admin&vista=$modulo_post&exito=0&error=" . urlencode("Se requiere confirmación con contraseña para guardar " . strtolower($tipo) . "s."));
+                    exit();
+                }
+                unset($_SESSION['clave_confirmada_tiempo']);
+            }
+
             if ($id > 0) {
-                Database::query("UPDATE contactos SET nombre=?, tipo=?, categoria=?, telefono=?, correo=?, direccion=? WHERE id=?", [$nombre, $tipo, $categoria, $tel, $correo, $direccion, $id]);
+                Database::query(
+                    "UPDATE contactos SET nombre=?, tipo=?, categoria=?, cedula=?, telefono=?, correo=?, direccion=?, banco=?, cuenta_bancaria=?, pago_movil_banco=?, pago_movil_telefono=?, pago_movil_cedula=? WHERE id=?", 
+                    [$nombre, $tipo, $categoria, $cedula, $tel, $correo, $direccion, $banco, $cuenta_bancaria, $pago_movil_banco, $pago_movil_telefono, $pago_movil_cedula, $id]
+                );
                 self::logBitacora('Editar contacto', "Editó $tipo $nombre (ID $id)", 'contactos', $id);
             } else {
-                Database::query("INSERT INTO contactos (nombre, tipo, categoria, telefono, correo, direccion) VALUES (?, ?, ?, ?, ?, ?)", [$nombre, $tipo, $categoria, $tel, $correo, $direccion]);
+                Database::query(
+                    "INSERT INTO contactos (nombre, tipo, categoria, cedula, telefono, correo, direccion, banco, cuenta_bancaria, pago_movil_banco, pago_movil_telefono, pago_movil_cedula) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                    [$nombre, $tipo, $categoria, $cedula, $tel, $correo, $direccion, $banco, $cuenta_bancaria, $pago_movil_banco, $pago_movil_telefono, $pago_movil_cedula]
+                );
                 $nuevo_id = Database::insertId();
                 self::logBitacora('Crear contacto', "Creó $tipo $nombre", 'contactos', $nuevo_id);
             }
@@ -603,24 +839,45 @@ class AdminController {
         }
 
         if ($accion === 'guardar_usuario' && $rol_usuario === 'admin') {
+            $tiempo_confirmado = $_SESSION['clave_confirmada_tiempo'] ?? 0;
+            if (time() - $tiempo_confirmado > 300) {
+                header("Location: index.php?action=admin&vista=Personal&exito=0&error=" . urlencode("Se requiere confirmación con contraseña para guardar personal."));
+                exit();
+            }
+            unset($_SESSION['clave_confirmada_tiempo']);
+
             $id = intval($_POST['id']);
             $nombre = trim($_POST['nombre']);
+            $cedula = trim($_POST['cedula'] ?? '');
+            $telefono = trim($_POST['telefono'] ?? '');
             $correo = trim($_POST['correo']);
             $rol = $_POST['rol'];
             $clave = $_POST['clave'] ?? '';
+            $banco = trim($_POST['banco'] ?? '');
+            $cuenta_bancaria = trim($_POST['cuenta_bancaria'] ?? '');
+            $pago_movil_banco = trim($_POST['pago_movil_banco'] ?? '');
+            $pago_movil_telefono = trim($_POST['pago_movil_telefono'] ?? '');
+            $pago_movil_cedula = trim($_POST['pago_movil_cedula'] ?? '');
+
             if ($id > 0) {
                 if ($clave) {
                     $clave_hash = password_hash($clave, PASSWORD_DEFAULT);
-                    Database::query("UPDATE usuarios SET nombre=?, correo=?, contrasena=?, rol=? WHERE id=?", [$nombre, $correo, $clave_hash, $rol, $id]);
+                    Database::query(
+                        "UPDATE usuarios SET nombre=?, cedula=?, telefono=?, correo=?, contrasena=?, rol=?, banco=?, cuenta_bancaria=?, pago_movil_banco=?, pago_movil_telefono=?, pago_movil_cedula=? WHERE id=?", 
+                        [$nombre, $cedula, $telefono, $correo, $clave_hash, $rol, $banco, $cuenta_bancaria, $pago_movil_banco, $pago_movil_telefono, $pago_movil_cedula, $id]
+                    );
                 } else {
-                    Database::query("UPDATE usuarios SET nombre=?, correo=?, rol=? WHERE id=?", [$nombre, $correo, $rol, $id]);
+                    Database::query(
+                        "UPDATE usuarios SET nombre=?, cedula=?, telefono=?, correo=?, rol=?, banco=?, cuenta_bancaria=?, pago_movil_banco=?, pago_movil_telefono=?, pago_movil_cedula=? WHERE id=?", 
+                        [$nombre, $cedula, $telefono, $correo, $rol, $banco, $cuenta_bancaria, $pago_movil_banco, $pago_movil_telefono, $pago_movil_cedula, $id]
+                    );
                 }
                 self::logBitacora('Editar usuario', "Editó usuario $nombre (ID $id)", 'usuarios', $id);
             } elseif ($nombre && $correo && $clave) {
                 $clave_hash = password_hash($clave, PASSWORD_DEFAULT);
                 Database::query(
-                    "INSERT INTO usuarios (nombre, correo, contrasena, rol) VALUES (?, ?, ?, ?)",
-                    [$nombre, $correo, $clave_hash, $rol]
+                    "INSERT INTO usuarios (nombre, cedula, telefono, correo, contrasena, rol, banco, cuenta_bancaria, pago_movil_banco, pago_movil_telefono, pago_movil_cedula) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [$nombre, $cedula, $telefono, $correo, $clave_hash, $rol, $banco, $cuenta_bancaria, $pago_movil_banco, $pago_movil_telefono, $pago_movil_cedula]
                 );
                 $nuevo_id = Database::insertId();
                 self::logBitacora('Crear usuario', "Creó usuario $nombre (rol: $rol)", 'usuarios', $nuevo_id);
@@ -771,6 +1028,14 @@ class AdminController {
             $id = intval($_POST['id']);
             $actual = $_POST['estado_actual'];
             $nuevo = ($actual === 'Disponible') ? 'Agotado' : 'Disponible';
+            if ($actual === 'Disponible') {
+                $tiempo_confirmado = $_SESSION['clave_confirmada_tiempo'] ?? 0;
+                if (time() - $tiempo_confirmado > 300) {
+                    header("Location: index.php?action=admin&vista=Productos&exito=0&error=" . urlencode("Se requiere confirmación con contraseña para desactivar la disponibilidad del producto."));
+                    exit();
+                }
+                unset($_SESSION['clave_confirmada_tiempo']);
+            }
             Database::query("UPDATE productos SET estado=? WHERE id=?", [$nuevo, $id]);
             $nom_res = Database::query("SELECT nombre FROM productos WHERE id=?", [$id]);
             $nom_fila = Database::fetch($nom_res);
@@ -809,7 +1074,7 @@ class AdminController {
 
         if ($accion === 'activar' && $rol_usuario !== 'vendedor') {
             $id = intval($_POST['id']);
-            $modulo_orig = $_POST['modulo_orig'];
+            $modulo_orig = $_POST['modulo_orig'] ?? $vista;
             if ($modulo_orig === 'Productos') {
                 $tabla = 'productos';
                 $estado_restaurar = 'Disponible';
@@ -845,8 +1110,10 @@ class AdminController {
             $nom_fila = Database::fetch($nom_res);
             $nombre_reg = $nom_fila ? ($modulo_orig === 'Pedidos' ? "Pedido #" . $nom_fila[$columna_nombre] : $nom_fila[$columna_nombre]) : "ID $id";
             Database::query("UPDATE $tabla SET estado = ? WHERE id = ?", [$estado_restaurar, $id]);
-            self::logBitacora('Activar', "Habilitó $nombre_reg desde Papelera", $tabla, $id);
-            header("Location: index.php?action=admin&vista=Papelera&exito=1");
+            $origen_txt = ($vista === 'Papelera') ? 'desde Papelera' : '';
+            self::logBitacora('Activar', "Habilitó $nombre_reg ($modulo_orig) $origen_txt", $tabla, $id);
+            $redir = ($vista === 'Papelera') ? 'Papelera' : $modulo_orig;
+            header("Location: index.php?action=admin&vista=$redir&exito=1");
             exit();
         }
 
@@ -906,7 +1173,7 @@ class AdminController {
             $nom_res = Database::query("SELECT CONCAT(pr.nombre, ' (', p.cantidad, ' uds)') as nombre FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.id=?", [$id]);
             $nom_fila = Database::fetch($nom_res);
             $nombre_ref = $nom_fila ? $nom_fila['nombre'] : "ID $id";
-            Database::query("UPDATE perdidas SET estado = 'Inactivo' WHERE id = ?", [$id]);
+            Database::query("UPDATE perdidas SET estado = 'Papelera' WHERE id = ?", [$id]);
             self::logBitacora('Mover a Papelera', "Movió a Papelera pérdida: $nombre_ref", 'perdidas', $id);
             header("Location: index.php?action=admin&vista=Perdidas&exito=1");
             exit();
@@ -996,30 +1263,30 @@ class AdminController {
 
         if ($accion === 'vaciar_papelera' && $rol_usuario === 'admin') {
             // Eliminar documentos permanentemente (incluyendo archivos del disco)
-            $docs_res = Database::query("SELECT id FROM documentos WHERE estado = 'Inactivo'");
+            $docs_res = Database::query("SELECT id FROM documentos WHERE estado = 'Papelera'");
             $docs_data = Database::getResult($docs_res);
             while ($doc_row = mysqli_fetch_assoc($docs_data)) {
                 Documento::eliminarPermanente($doc_row['id']);
             }
             // Liberar claves foráneas antes de eliminar en bloque
-            Database::query("UPDATE pedidos SET id_contacto = NULL WHERE id_contacto IN (SELECT id FROM contactos WHERE estado = 'Inactivo')");
-            Database::query("UPDATE detalles_pedido SET id_producto = NULL WHERE id_producto IN (SELECT id FROM productos WHERE estado = 'Inactivo')");
-            Database::query("UPDATE perdidas SET id_producto = NULL WHERE id_producto IN (SELECT id FROM productos WHERE estado = 'Inactivo')");
+            Database::query("UPDATE pedidos SET id_contacto = NULL WHERE id_contacto IN (SELECT id FROM contactos WHERE estado = 'Papelera')");
+            Database::query("UPDATE detalles_pedido SET id_producto = NULL WHERE id_producto IN (SELECT id FROM productos WHERE estado = 'Papelera')");
+            Database::query("UPDATE perdidas SET id_producto = NULL WHERE id_producto IN (SELECT id FROM productos WHERE estado = 'Papelera')");
             
             // Eliminar dependencias de pedidos inactivos
-            $peds_res = Database::query("SELECT id FROM pedidos WHERE estado = 'Inactivo'");
+            $peds_res = Database::query("SELECT id FROM pedidos WHERE estado = 'Papelera'");
             $peds_data = Database::getResult($peds_res);
             while ($ped_row = mysqli_fetch_assoc($peds_data)) {
                 Database::query("DELETE FROM detalles_pedido WHERE id_pedido = ?", [$ped_row['id']]);
             }
 
             // Eliminar el resto de tablas directamente
-            Database::query("DELETE FROM productos WHERE estado = 'Inactivo'");
-            Database::query("DELETE FROM contactos WHERE estado = 'Inactivo'");
-            Database::query("DELETE FROM materia_prima WHERE estado = 'Inactivo'");
-            Database::query("DELETE FROM perdidas WHERE estado = 'Inactivo'");
-            Database::query("DELETE FROM pedidos WHERE estado = 'Inactivo'");
-            Database::query("DELETE FROM usuarios WHERE estado = 'Inactivo'");
+            Database::query("DELETE FROM productos WHERE estado = 'Papelera'");
+            Database::query("DELETE FROM contactos WHERE estado = 'Papelera'");
+            Database::query("DELETE FROM materia_prima WHERE estado = 'Papelera'");
+            Database::query("DELETE FROM perdidas WHERE estado = 'Papelera'");
+            Database::query("DELETE FROM pedidos WHERE estado = 'Papelera'");
+            Database::query("DELETE FROM usuarios WHERE estado = 'Papelera'");
 
             self::logBitacora('Vaciar Papelera', 'Vació completamente la papelera del sistema', 'sistema');
             header("Location: index.php?action=admin&vista=Papelera&exito=1");
@@ -1038,11 +1305,11 @@ class AdminController {
 
         require_once __DIR__ . '/../../vendor/autoload.php';
 
-        $sql_clientes = "SELECT c.nombre, c.telefono, c.correo, COUNT(p.id) as total_pedidos, COALESCE(SUM(CASE WHEN p.estado = 'Completado' THEN p.total ELSE 0 END), 0) as total_gastado, MAX(p.fecha) as ultima_compra, COALESCE(AVG(CASE WHEN p.estado = 'Completado' THEN p.total END), 0) as ticket_promedio FROM contactos c LEFT JOIN pedidos p ON c.id = p.id_contacto WHERE c.tipo = 'Cliente' AND c.estado != 'Inactivo' GROUP BY c.id ORDER BY total_gastado DESC";
+        $sql_clientes = "SELECT c.nombre, c.telefono, c.correo, COUNT(p.id) as total_pedidos, COALESCE(SUM(CASE WHEN p.estado = 'Completado' THEN p.total ELSE 0 END), 0) as total_gastado, MAX(p.fecha) as ultima_compra, COALESCE(AVG(CASE WHEN p.estado = 'Completado' THEN p.total END), 0) as ticket_promedio FROM contactos c LEFT JOIN pedidos p ON c.id = p.id_contacto WHERE c.tipo = 'Cliente' AND c.estado != 'Papelera' GROUP BY c.id ORDER BY total_gastado DESC";
         $sql_bitacora = "SELECT b.fecha, b.accion, b.descripcion, COALESCE(u.nombre, 'Sistema') as usuario_nombre FROM bitacora b LEFT JOIN usuarios u ON b.id_usuario = u.id ORDER BY b.fecha DESC LIMIT 500";
         $sql_iva = "SELECT DATE_FORMAT(p.fecha, '%Y-%m') as mes, COUNT(DISTINCT p.id) as num_pedidos, COALESCE(SUM(CASE WHEN dp.iva_aplicado > 0 THEN dp.cantidad * dp.precio_unitario ELSE 0 END), 0) as ventas_gravadas, COALESCE(SUM(CASE WHEN dp.iva_aplicado = 0 THEN dp.cantidad * dp.precio_unitario ELSE 0 END), 0) as ventas_exentas, COALESCE(SUM(CASE WHEN dp.iva_aplicado > 0 THEN ROUND(dp.cantidad * dp.precio_unitario * dp.iva_aplicado / 100, 2) ELSE 0 END), 0) as iva_generado, COALESCE(SUM(dp.cantidad * dp.precio_unitario + CASE WHEN dp.iva_aplicado > 0 THEN (dp.cantidad * dp.precio_unitario * dp.iva_aplicado / 100) ELSE 0 END), 0) as total FROM pedidos p JOIN detalles_pedido dp ON p.id = dp.id_pedido JOIN productos pr ON dp.id_producto = pr.id WHERE p.estado = 'Completado' GROUP BY DATE_FORMAT(p.fecha, '%Y-%m') ORDER BY mes DESC";
 
-        $sql_perdidas = "SELECT pr.nombre as prod_nombre, p.cantidad, p.motivo, DATE_FORMAT(p.fecha, '%d/%m/%Y %H:%i') as fecha_fmt FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.estado != 'Inactivo' ORDER BY p.fecha DESC";
+        $sql_perdidas = "SELECT pr.nombre as prod_nombre, p.cantidad, p.motivo, DATE_FORMAT(p.fecha, '%d/%m/%Y %H:%i') as fecha_fmt FROM perdidas p JOIN productos pr ON p.id_producto = pr.id WHERE p.estado != 'Papelera' ORDER BY p.fecha DESC";
 
         $queries = [
             'R. Clientes' => $sql_clientes,

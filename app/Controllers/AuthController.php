@@ -8,13 +8,16 @@ class AuthController {
         if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $correo = trim($_POST['correo'] ?? '');
             $clave = $_POST['clave'] ?? '';
+            $verificar_clave = $_POST['verificar_clave'] ?? '';
 
-            if (empty($correo) || empty($clave)) {
-                $error = "Por favor, rellena todos los campos.";
+            if (empty($correo) || empty($clave) || empty($verificar_clave)) {
+                $error = "Por favor, rellena todos los campos. Debe verificar la contraseña.";
+            } elseif ($clave !== $verificar_clave) {
+                $error = "Las contraseñas no coinciden. Debe verificar la contraseña ingresando la misma.";
             } else {
                 try {
                     $result = Database::query(
-                        "SELECT id, nombre, contrasena, rol FROM usuarios WHERE correo = ?",
+                        "SELECT id, nombre, contrasena, rol, estado FROM usuarios WHERE correo = ?",
                         [$correo]
                     );
                     $usuario = Database::fetch($result);
@@ -22,6 +25,8 @@ class AuthController {
                     if ($usuario && password_verify($clave, $usuario['contrasena'])) {
                         if ($usuario['rol'] === 'cliente') {
                             $error = "Tu cuenta no tiene acceso al sistema.";
+                        } elseif (($usuario['estado'] ?? 'Activo') !== 'Activo') {
+                            $error = "Tu cuenta de usuario se encuentra inactiva. Contacta al administrador.";
                         } else {
                             session_regenerate_id(true);
                             Session::set('usuario_id', $usuario['id']);

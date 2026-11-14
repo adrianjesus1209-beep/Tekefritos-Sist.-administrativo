@@ -473,6 +473,16 @@ $usuario_correo       = $usuario_correo       ?? '';
                         <span class="text-muted" style="font-size:0.8rem;">Hasta:</span>
                         <input type="date" id="doc-date-to" class="form-control form-control-sm" style="max-width:160px;" onchange="filtrarDocumentos()">
                     </div>
+                    <?php elseif(in_array($vista, ['Personal', 'Proveedores', 'Clientes', 'Productos', 'MateriaPrima'])): ?>
+                    <div class="p-2 border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2" style="background:#fafafa;">
+                        <div class="d-flex align-items-center gap-1">
+                            <span class="text-muted small me-2"><i class="bi bi-funnel me-1"></i>Filtrar:</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 btn-filtro-estado active" data-filtro="todos" onclick="filtrarTablaEstado('todos', this)">Todos</button>
+                            <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 btn-filtro-estado" data-filtro="activos" onclick="filtrarTablaEstado('activos', this)">Activos</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 btn-filtro-estado" data-filtro="inactivos" onclick="filtrarTablaEstado('inactivos', this)">Inactivos</button>
+                        </div>
+                        <div class="small text-muted" id="conteo-filtro-estado"></div>
+                    </div>
                     <?php endif; ?>
                     <div class="table-responsive">
                         <table class="table table-hover mb-0 table-custom" id="tabla-datos">
@@ -481,21 +491,21 @@ $usuario_correo       = $usuario_correo       ?? '';
                                     <?php if($vista === 'Documentos'): ?>
                                         <th>Archivo</th><th>Contacto</th><th>Tipo</th><th>Subido por</th><th>Fecha</th><th>Acciones</th>
                                     <?php elseif($vista === 'Productos'): ?>
-                                        <th>Imagen</th><th>Nombre</th><th>Código</th><th>Peso</th><th>Precio Venta</th><th>Rentabilidad</th><th>Stock</th><th>Stock Mínimo</th><th>Tipo</th><th>IVA</th><th>Acciones</th>
+                                        <th>Imagen</th><th>Nombre</th><th>Código</th><th>Peso</th><th>Precio Venta</th><th>Rentabilidad</th><th>Stock</th><th>Stock Mínimo</th><th>Tipo</th><th>IVA</th><th>Estado</th><th>Acciones</th>
                                     <?php elseif($vista === 'Categorias'): ?>
                                         <th>Nombre</th><th>Descripcion</th><th>Acciones</th>
                                     <?php elseif($vista === 'Clientes'): ?>
-                                        <th>Nombre</th><th>Telefono</th><th>Correo</th><th>Categoria</th><th>Direccion</th><th>Acciones</th>
+                                        <th>Nombre</th><th>Telefono</th><th>Correo</th><th>Categoria</th><th>Direccion</th><th>Estado</th><th>Acciones</th>
                                     <?php elseif($vista === 'Proveedores'): ?>
-                                        <th>Nombre</th><th>Telefono</th><th>Correo</th><th>Direccion</th><th>Acciones</th>
+                                        <th>Proveedor / Cédula</th><th>Teléfono</th><th>Correo</th><th>Dirección</th><th>Estado</th><th>Acciones</th>
                                     <?php elseif($vista === 'Pedidos'): ?>
                                         <th>ID</th><th>Cliente</th><th>Items</th><th>Total</th><th>Entrega</th><th>Estado</th><th>Fecha</th><th>Acciones</th>
                                     <?php elseif($vista === 'Perdidas'): ?>
                                         <th>Producto</th><th>Cantidad</th><th>Motivo</th><th>Fecha</th><th>Acciones</th>
                                     <?php elseif($vista === 'MateriaPrima'): ?>
-                                        <th>ID</th><th>Nombre</th><th>Cantidad Actual</th><th>Proveedor</th><th>Acciones</th>
+                                        <th>ID</th><th>Nombre</th><th>Cantidad Actual</th><th>Proveedor</th><th>Estado</th><th>Acciones</th>
                                     <?php elseif($vista === 'Personal'): ?>
-                                        <th>ID</th><th>Nombre</th><th>Correo</th><th>Rol</th><th>Acciones</th>
+                                        <th>ID</th><th>Personal / Cédula</th><th>Teléfono</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acciones</th>
                                     <?php elseif($vista === 'Papelera'): ?>
                                         <th>Tipo</th><th>Nombre del Registro</th><th>Acciones</th>
                                     <?php elseif($reporte === 'clientes'): ?>
@@ -544,6 +554,7 @@ $usuario_correo       = $usuario_correo       ?? '';
                                     <?php endif; ?>
                                 <?php elseif ($datos instanceof mysqli_result && mysqli_num_rows($datos) > 0): ?>
                                     <?php while($row = mysqli_fetch_assoc($datos)): ?>
+                                    <tr data-estado="<?php echo htmlspecialchars($row['estado'] ?? 'Activo'); ?>" class="<?php echo (($row['estado'] ?? '') === 'Inactivo') ? 'table-light' : ''; ?>">
                                     <?php if($vista === 'Productos'):
                                             $min = intval($row['stock_minimo']);
                                             $stock_val = intval($row['stock']);
@@ -567,6 +578,15 @@ $usuario_correo       = $usuario_correo       ?? '';
                                             <td><span class="badge bg-light text-dark"><?php echo $row['stock_minimo']; ?></span></td>
                                             <td><span class="badge <?php echo ($row['tipo'] ?? 'Elaboracion') === 'Sin elaboracion' ? 'badge-tipo-sinelab' : 'badge-tipo-elab'; ?>"><?php echo ($row['tipo'] ?? 'Elaboracion') === 'Sin elaboracion' ? 'Sin elaboración' : 'Elaboración'; ?></span></td>
                                             <td><span class="badge <?php echo intval($row['aplica_iva'] ?? 0) > 0 ? 'badge-iva-si' : 'badge-iva-no'; ?>"><?php echo intval($row['aplica_iva'] ?? 0) > 0 ? 'Sí' : 'No'; ?></span></td>
+                                            <td>
+                                                <?php if(($row['estado'] ?? 'Disponible') === 'Disponible'): ?>
+                                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size:0.75rem;">Disponible</span>
+                                                <?php elseif($row['estado'] === 'Agotado'): ?>
+                                                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25" style="font-size:0.75rem;">Agotado</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25" style="font-size:0.75rem;">Inactivo</span>
+                                                <?php endif; ?>
+                                            </td>
                                         <?php elseif($vista === 'Categorias'): ?>
                                             <td><strong><?php echo htmlspecialchars($row['nombre']); ?></strong></td>
                                             <td><?php echo htmlspecialchars($row['descripcion'] ?? ''); ?></td>
@@ -576,11 +596,30 @@ $usuario_correo       = $usuario_correo       ?? '';
                                             <td><?php echo htmlspecialchars($row['correo']); ?></td>
                                             <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['categoria'] ?? 'Regular'); ?></span></td>
                                             <td><?php echo htmlspecialchars($row['direccion']); ?></td>
+                                            <td>
+                                                <?php if(($row['estado'] ?? 'Activo') === 'Activo'): ?>
+                                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size:0.75rem;">Activo</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25" style="font-size:0.75rem;">Inactivo</span>
+                                                <?php endif; ?>
+                                            </td>
                                         <?php elseif($vista === 'Proveedores'): ?>
-                                            <td><strong><?php echo htmlspecialchars($row['nombre']); ?></strong></td>
+                                            <td>
+                                                <strong><?php echo htmlspecialchars($row['nombre']); ?></strong>
+                                                <?php if(!empty($row['cedula'])): ?>
+                                                    <br><span class="badge bg-light text-secondary border font-monospace" style="font-size:0.75rem;"><i class="bi bi-person-vcard me-1"></i><?php echo htmlspecialchars($row['cedula']); ?></span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td><?php echo htmlspecialchars($row['telefono']); ?></td>
                                             <td><?php echo htmlspecialchars($row['correo']); ?></td>
                                             <td><?php echo htmlspecialchars($row['direccion']); ?></td>
+                                            <td>
+                                                <?php if(($row['estado'] ?? 'Activo') === 'Activo'): ?>
+                                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size:0.75rem;">Activo</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25" style="font-size:0.75rem;">Inactivo</span>
+                                                <?php endif; ?>
+                                            </td>
                                         <?php elseif($vista === 'Pedidos'):
                                             $est_cl = match($row['estado']) {
                                                 'Completado' => 'estado-completado',
@@ -604,7 +643,14 @@ $usuario_correo       = $usuario_correo       ?? '';
                                             <td>#<?php echo $row['id']; ?></td>
                                             <td><strong><?php echo htmlspecialchars($row['nombre']); ?></strong></td>
                                             <td><?php echo $row['cantidad'] . ' ' . htmlspecialchars($row['unidad']); ?></td>
-                                            <td><?php echo !empty($row['proveedor_nombre']) ? '<span class="badge bg-light text-dark border">' . htmlspecialchars($row['proveedor_nombre']) . '</span>' : '<span class="text-muted" style="font-size:0.8rem;">Sin proveedor</span>'; ?></td>
+                                            <td><?php echo !empty($row['proveedor_nombre']) ? '<span class="badge bg-light text-dark border">' . htmlspecialchars($row['proveedor_nombre']) . (!empty($row['proveedor_cedula']) ? ' <small class="text-muted font-monospace">(' . htmlspecialchars($row['proveedor_cedula']) . ')</small>' : '') . '</span>' : '<span class="text-muted" style="font-size:0.8rem;">Sin proveedor</span>'; ?></td>
+                                            <td>
+                                                <?php if(($row['estado'] ?? 'Disponible') === 'Disponible'): ?>
+                                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size:0.75rem;">Disponible</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25" style="font-size:0.75rem;">Inactivo</span>
+                                                <?php endif; ?>
+                                            </td>
                                         <?php elseif($vista === 'Personal'):
                                             $badge_rol_cl = match($row['rol']) {
                                                 'admin' => 'bg-danger text-white',
@@ -614,9 +660,22 @@ $usuario_correo       = $usuario_correo       ?? '';
                                             };
                                         ?>
                                             <td>#<?php echo $row['id']; ?></td>
-                                            <td><strong><?php echo htmlspecialchars($row['nombre']); ?></strong></td>
+                                            <td>
+                                                <strong><?php echo htmlspecialchars($row['nombre']); ?></strong>
+                                                <?php if(!empty($row['cedula'])): ?>
+                                                    <br><span class="badge bg-light text-secondary border font-monospace" style="font-size:0.75rem;"><i class="bi bi-person-vcard me-1"></i><?php echo htmlspecialchars($row['cedula']); ?></span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td><?php echo !empty($row['telefono']) ? htmlspecialchars($row['telefono']) : '<span class="text-muted" style="font-size:0.8rem;">-</span>'; ?></td>
                                             <td><?php echo htmlspecialchars($row['correo']); ?></td>
                                             <td><span class="badge <?php echo $badge_rol_cl; ?>"><?php echo htmlspecialchars(strtoupper($row['rol'])); ?></span></td>
+                                            <td>
+                                                <?php if(($row['estado'] ?? 'Activo') === 'Activo'): ?>
+                                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size:0.75rem;">Activo</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25" style="font-size:0.75rem;">Inactivo</span>
+                                                <?php endif; ?>
+                                            </td>
                                         <?php elseif($vista === 'Papelera'): ?>
                                             <td><strong><?php echo htmlspecialchars($row['nombre']); ?></strong> <span class="badge bg-danger bg-opacity-10 text-danger">Inhabilitado</span></td>
                                             <td><span class="badge" style="background:#e0e0e0;color:#555;"><?php echo htmlspecialchars($row['tipo_orig']); ?></span> | <?php echo htmlspecialchars($row['info_1']); ?></td>
@@ -685,7 +744,11 @@ $usuario_correo       = $usuario_correo       ?? '';
                                             <?php elseif ($rol_usuario === 'vendedor' && in_array($vista, ['Productos', 'Clientes'])): ?>
                                             <?php else: ?>
                                                 <div class="d-inline-flex gap-1 align-items-center">
-                                                    <?php if (array_key_exists('estado', $row) && $rol_usuario !== 'vendedor' && $vista === 'Productos'): ?>
+                                                    <?php 
+                                                    $es_inactivo_row = (isset($row['estado']) && $row['estado'] === 'Inactivo');
+                                                    $es_desactivable = in_array($vista, ['Personal', 'Proveedores', 'Clientes', 'Productos', 'MateriaPrima']);
+                                                    ?>
+                                                    <?php if (array_key_exists('estado', $row) && $rol_usuario !== 'vendedor' && $vista === 'Productos' && !$es_inactivo_row): ?>
                                                     <form method="POST" style="display:inline" title="Cambiar Disponibilidad" onsubmit="return confirmarToggle(event)">
                                                         <input type="hidden" name="accion" value="toggle_estado_producto">
                                                         <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
@@ -695,26 +758,65 @@ $usuario_correo       = $usuario_correo       ?? '';
                                                         </button>
                                                     </form>
                                                     <?php endif; ?>
-                                                    <button onclick='editarRegistro(<?php echo json_encode($row); ?>, "<?php echo htmlspecialchars($vista, ENT_QUOTES); ?>")' class="btn-action btn-action-edit"><i class="bi bi-pencil"></i></button>
-                                                    <form method="POST" style="display:inline" onsubmit="confirmarForm(event, '<?php
-                                                        $msg_eliminar = match($vista) {
-                                                            'Productos'   => 'El producto se movera a la Papelera. Podras restaurarlo o eliminarlo permanentemente desde ahi.',
-                                                            'Categorias'  => 'Esta categoria se eliminara permanentemente. Los productos asociados quedaran sin categoria.',
-                                                            'Clientes'    => 'El cliente se movera a la Papelera. Podras restaurarlo o eliminarlo permanentemente desde ahi.',
-                                                            'Proveedores' => 'El proveedor se movera a la Papelera. Podras restaurarlo o eliminarlo permanentemente desde ahi.',
-                                                            'MateriaPrima'=> 'Este insumo se movera a la Papelera. Podras restaurarlo o eliminarlo permanentemente desde ahi.',
-                                                            'Perdidas'    => 'Esta perdida se movera a la Papelera. Podras restaurarla o eliminarla permanentemente desde ahi.',
-                                                            'Personal'    => 'Este usuario se inhabilitara y se movera a la Papelera. Podras restaurarlo o eliminarlo permanentemente desde ahi.',
-                                                            'Pedidos'     => 'Este pedido se movera a la Papelera. Podras restaurarlo o eliminarlo permanentemente desde ahi.',
-                                                            default       => 'Este registro se movera a la Papelera. Podras restaurarlo desde ahi.',
-                                                        };
-                                                        echo $msg_eliminar;
-                                                    ?>')">
-                                                        <input type="hidden" name="accion" value="<?php echo match($vista) {'Categorias'=>'eliminar_categoria',default=>'eliminar'}; ?>">
-                                                        <input type="hidden" name="modulo" value="<?php echo $vista; ?>">
-                                                        <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
-                                                        <button type="submit" class="btn-action btn-action-delete"><i class="bi bi-trash"></i></button>
-                                                    </form>
+                                                    <?php if(in_array($vista, ['Personal', 'Proveedores'])): ?>
+                                                    <button type="button" onclick='verDatosPago(<?php echo htmlspecialchars(json_encode($row), ENT_QUOTES, 'UTF-8'); ?>, "<?php echo $vista; ?>")' class="btn-action" title="Ver Datos de Pago y Bancarios" style="color:#0d6efd;background:#eef5ff;border-color:#b8d5ff;">
+                                                        <i class="bi bi-credit-card-2-front"></i>
+                                                    </button>
+                                                    <?php endif; ?>
+                                                    <?php if($vista === 'Pedidos'): ?>
+                                                    <a href="index.php?action=llenar-talonario&tipo=Factura&id_pedido=<?php echo $row['id']; ?>" class="btn-action" title="Generar Factura de este pedido" style="color:#0d6efd;background:#eef5ff;border:1px solid #b8d5ff;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">
+                                                        <i class="bi bi-receipt"></i>
+                                                    </a>
+                                                    <a href="index.php?action=llenar-talonario&tipo=Nota+de+Entrega&id_pedido=<?php echo $row['id']; ?>" class="btn-action" title="Generar Nota de Entrega de este pedido" style="color:#198754;background:#eaf8ef;border:1px solid #bbf0cb;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">
+                                                        <i class="bi bi-truck"></i>
+                                                    </a>
+                                                    <?php endif; ?>
+                                                    <button onclick='editarRegistro(<?php echo json_encode($row); ?>, "<?php echo htmlspecialchars($vista, ENT_QUOTES); ?>")' class="btn-action btn-action-edit" title="Editar"><i class="bi bi-pencil"></i></button>
+
+                                                    <?php if ($es_desactivable): ?>
+                                                        <?php if ($es_inactivo_row): ?>
+                                                            <!-- Botón Activar / Reactivar directamente en la lista -->
+                                                            <form method="POST" style="display:inline" onsubmit="confirmarForm(event, '¿Activar nuevamente este registro?')">
+                                                                <input type="hidden" name="accion" value="activar">
+                                                                <input type="hidden" name="modulo_orig" value="<?php echo $vista; ?>">
+                                                                <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
+                                                                <button type="submit" class="btn-action" title="Activar registro" style="color:#16a34a;background:#f0fdf4;border-color:#bbf7d0;">
+                                                                    <i class="bi bi-check-circle"></i>
+                                                                </button>
+                                                            </form>
+                                                            <!-- Botón Mover a Papelera (solo cuando ya está inactivo) -->
+                                                            <form method="POST" style="display:inline" onsubmit="confirmarForm(event, '¿Mover este registro inactivo a la Papelera? Se considerará desecho y podrás eliminarlo definitivamente desde la Papelera.')">
+                                                                <input type="hidden" name="accion" value="mover_papelera">
+                                                                <input type="hidden" name="modulo" value="<?php echo $vista; ?>">
+                                                                <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
+                                                                <button type="submit" class="btn-action btn-action-delete" title="Mover a Papelera"><i class="bi bi-trash"></i></button>
+                                                            </form>
+                                                        <?php else: ?>
+                                                            <!-- Botón Desactivar (No envía a la papelera, suspende el registro) -->
+                                                            <form method="POST" style="display:inline" onsubmit="confirmarForm(event, '¿Desactivar este registro? Quedará inactivo en la lista y podrás reactivarlo cuando lo necesites.')">
+                                                                <input type="hidden" name="accion" value="desactivar">
+                                                                <input type="hidden" name="modulo" value="<?php echo $vista; ?>">
+                                                                <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
+                                                                <button type="submit" class="btn-action" title="Desactivar" style="color:#d97706;background:#fffbeb;border-color:#fcd34d;">
+                                                                    <i class="bi bi-slash-circle"></i>
+                                                                </button>
+                                                            </form>
+                                                        <?php endif; ?>
+                                                    <?php else: ?>
+                                                        <form method="POST" style="display:inline" onsubmit="confirmarForm(event, '<?php
+                                                            $msg_eliminar = match($vista) {
+                                                                'Categorias'  => 'Esta categoría se eliminará permanentemente. Los productos asociados quedarán sin categoría.',
+                                                                'Pedidos'     => 'Este pedido se moverá a la Papelera como desecho. Podrás restaurarlo o eliminarlo permanentemente desde allí.',
+                                                                default       => 'Este registro se moverá a la Papelera.',
+                                                            };
+                                                            echo $msg_eliminar;
+                                                        ?>')">
+                                                            <input type="hidden" name="accion" value="<?php echo match($vista) {'Categorias'=>'eliminar_categoria',default=>'eliminar'}; ?>">
+                                                            <input type="hidden" name="modulo" value="<?php echo $vista; ?>">
+                                                            <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
+                                                            <button type="submit" class="btn-action btn-action-delete" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                                        </form>
+                                                    <?php endif; ?>
                                                 </div>
                                             <?php endif; ?>
                                         </td>
@@ -736,7 +838,7 @@ $usuario_correo       = $usuario_correo       ?? '';
                     <h5 class="mb-0">Configuración del Sistema</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" class="form-confirmar" data-msg="Guardar cambios en la configuracion?">
+                    <form method="POST" id="form-configuracion">
                         <input type="hidden" name="accion" value="guardar_config">
                         <div class="row g-3" style="max-width:500px;">
                             <div class="col-12 mt-3">
@@ -832,7 +934,57 @@ $usuario_correo       = $usuario_correo       ?? '';
     </div>
 </div>
 
-<!-- (modal editar eliminado — ahora redirige a llenar-talonario) -->
+<!-- MODAL CONFIRMACION DE CONTRASEÑA -->
+<div id="modal-clave-seguridad" class="modal" style="z-index: 2200;">
+    <div class="modal-contenido" style="max-width:380px;">
+        <div class="modal-header">
+            <h2>Confirmar con Contraseña</h2>
+            <button type="button" class="modal-close btn-cerrar-clave">&times;</button>
+        </div>
+        <form id="form-clave-confirmacion" onsubmit="validarClaveConfirmacion(event)">
+            <div class="campo-form" style="margin:0.5rem 0 1rem 0;">
+                <p id="texto-clave-seguridad" style="font-size:0.85rem;color:#475569;margin-bottom:0.75rem;line-height:1.4;">
+                    Por seguridad, ingresa tu contraseña de usuario para autorizar esta operación:
+                </p>
+                <div style="position:relative;">
+                    <input type="password" id="input-clave-seguridad" placeholder="Contraseña de usuario" required
+                        style="width:100%;padding-right:36px;box-sizing:border-box;">
+                    <button type="button" id="btn-toggle-ver-clave" title="Mostrar/Ocultar contraseña"
+                        style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:2px 4px;font-size:0.9rem;">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                </div>
+                <div id="error-clave-mensaje" style="display:none;color:#dc3545;font-size:0.8rem;margin-top:6px;font-weight:600;">
+                    <i class="bi bi-exclamation-circle-fill me-1"></i> <span id="error-clave-texto">Contraseña incorrecta.</span>
+                </div>
+            </div>
+            <div class="botones-modal">
+                <button type="button" class="btn-secundario btn-cerrar-clave" style="flex:1;">Cancelar</button>
+                <button type="submit" id="btn-confirmar-clave" class="btn-primario" style="flex:1;">
+                    <span id="btn-clave-texto">Confirmar</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL VER DATOS DE PAGO Y BANCARIOS -->
+<div id="modal-ver-pago" class="modal" style="z-index: 2150;">
+    <div class="modal-contenido" style="max-width: 480px;">
+        <div class="modal-header pb-2 border-bottom">
+            <h2 class="d-flex align-items-center gap-2 mb-0" style="font-size: 1.05rem;">
+                <i class="bi bi-credit-card-2-front text-primary"></i> Datos de Pago y Bancarios
+            </h2>
+            <button type="button" class="modal-close btn-cerrar-ver-pago">&times;</button>
+        </div>
+        <div class="p-2" id="ver-pago-cuerpo">
+            <!-- Se llena dinámicamente -->
+        </div>
+        <div class="botones-modal mt-3 pt-2 border-top">
+            <button type="button" class="btn-secundario btn-cerrar-ver-pago" style="flex:1;">Cerrar</button>
+        </div>
+    </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
@@ -883,7 +1035,7 @@ while ($po = mysqli_fetch_assoc($prod_perd_r)) {
 }
 
 // Proveedores (JSON array)
-$_prov_res = Database::query("SELECT id, nombre FROM contactos WHERE tipo='Proveedor' AND estado != 'Inactivo' ORDER BY nombre");
+$_prov_res = Database::query("SELECT id, nombre, cedula FROM contactos WHERE tipo='Proveedor' AND estado != 'Inactivo' ORDER BY nombre");
 $_prov_list = Database::fetchAll($_prov_res);
 ?>
 window.TASA_VAL = <?php echo $tasa_cambio; ?>;
@@ -900,7 +1052,147 @@ window._USUARIO_CORREO = <?php echo json_encode($usuario_correo, JSON_UNESCAPED_
 window._IVA_LABEL = <?php echo json_encode($iva_label); ?>;
 window._DOC_AUTO_RELOAD = <?php echo $doc_reload ? 'true' : 'false'; ?>;
 
+// Lista Oficial de Bancos de Venezuela
+window._BANCOS_VENEZUELA = [
+    { codigo: "0102", nombre: "0102 - BANCO DE VENEZUELA" },
+    { codigo: "0104", nombre: "0104 - BANCO VENEZOLANO DE CREDITO" },
+    { codigo: "0105", nombre: "0105 - BANCO MERCANTIL" },
+    { codigo: "0108", nombre: "0108 - BBVA PROVINCIAL" },
+    { codigo: "0114", nombre: "0114 - BANCARIBE" },
+    { codigo: "0115", nombre: "0115 - BANCO EXTERIOR" },
+    { codigo: "0128", nombre: "0128 - BANCO CARONÍ" },
+    { codigo: "0134", nombre: "0134 - BANESCO" },
+    { codigo: "0137", nombre: "0137 - BANCO SOFITASA" },
+    { codigo: "0138", nombre: "0138 - BANCO PLAZA" },
+    { codigo: "0146", nombre: "0146 - BANGENTE" },
+    { codigo: "0151", nombre: "0151 - BANCO FONDO COMÚN" },
+    { codigo: "0156", nombre: "0156 - 100% BANCO" },
+    { codigo: "0157", nombre: "0157 - DELSUR BANCO UNIVERSAL" },
+    { codigo: "0163", nombre: "0163 - BANCO DEL TESORO" },
+    { codigo: "0168", nombre: "0168 - BANCRECER" },
+    { codigo: "0169", nombre: "0169 - R4 BANCO MICROFINANCIERO C.A." },
+    { codigo: "0171", nombre: "0171 - BANCO ACTIVO" },
+    { codigo: "0172", nombre: "0172 - BANCAMIGA BANCO UNIVERSAL, C.A." },
+    { codigo: "0174", nombre: "0174 - BANPLUS" },
+    { codigo: "0175", nombre: "0175 - BANCO DIGITAL DE LOS TRABAJADORES, BANCO UNIVERSAL" },
+    { codigo: "0177", nombre: "0177 - BANFANB" },
+    { codigo: "0178", nombre: "0178 - N58 BANCO DIGITAL BANCO MICROFINANCIERO S A" },
+    { codigo: "0191", nombre: "0191 - BANCO NACIONAL DE CREDITO" },
+    { codigo: "0601", nombre: "0601 - INSTITUTO MUNICIPAL DE CREDITO POPULAR" }
+];
+
+function getBloqueDatosPagoHtml() {
+    let opts = '<option value="">-- Seleccionar Banco --</option>';
+    window._BANCOS_VENEZUELA.forEach(function(b) {
+        opts += '<option value="' + b.nombre + '">' + b.nombre + '</option>';
+    });
+
+    return `
+    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; margin-top:10px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding-bottom:4px; border-bottom:1px solid #e2e8f0;">
+            <span style="font-size:0.82rem; font-weight:700; color:#1e293b;"><i class="bi bi-bank me-1 text-danger"></i> Datos Bancarios (Transferencia)</span>
+            <span class="badge bg-secondary-subtle text-secondary" style="font-size:0.68rem;">Venezuela</span>
+        </div>
+        <div class="campo-form" style="margin-bottom:6px;">
+            <label style="font-size:0.75rem;">Banco</label>
+            <select name="banco" id="f_banco" onchange="autoCompletarCuentaBancaria(this.value)">
+                ${opts}
+            </select>
+        </div>
+        <div class="campo-form" style="margin-bottom:6px;">
+            <label style="font-size:0.75rem;">Número de Cuenta (20 dígitos)</label>
+            <input type="text" name="cuenta_bancaria" id="f_cuenta_bancaria" maxlength="20" placeholder="01020000000000000000" style="font-family:monospace; letter-spacing:1px;" oninput="validarCuenta20(this)">
+            <small id="cuenta-helper" class="text-muted" style="font-size:0.7rem;">0 / 20 dígitos</small>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; margin-bottom:6px; padding-top:6px; border-top:1px dashed #cbd5e1;">
+            <span style="font-size:0.8rem; font-weight:700; color:#334155;"><i class="bi bi-phone me-1 text-primary"></i> Pago Móvil</span>
+            <button type="button" class="btn btn-sm btn-link text-decoration-none p-0" style="font-size:0.72rem; color:var(--color-primario);" onclick="copiarDatosAPagoMovil()">
+                <i class="bi bi-arrow-down-short"></i> Copiar banco/tel/cédula
+            </button>
+        </div>
+
+        <div class="campo-form" style="margin-bottom:6px;">
+            <label style="font-size:0.75rem;">Banco Pago Móvil</label>
+            <select name="pago_movil_banco" id="f_pago_movil_banco">
+                ${opts}
+            </select>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div class="campo-form" style="margin-bottom:0;">
+                <label style="font-size:0.75rem;">Teléfono Pago Móvil</label>
+                <input type="text" name="pago_movil_telefono" id="f_pago_movil_telefono" placeholder="Ej: 04141234567" maxlength="15">
+            </div>
+            <div class="campo-form" style="margin-bottom:0;">
+                <label style="font-size:0.75rem;">Cédula / RIF Pago Móvil</label>
+                <input type="text" name="pago_movil_cedula" id="f_pago_movil_cedula" placeholder="Ej: V-12345678" maxlength="20">
+            </div>
+        </div>
+    </div>`;
+}
+
+function syncCedula() {
+    const pref = document.getElementById('prefijo_cedula') ? document.getElementById('prefijo_cedula').value : '';
+    const num = document.getElementById('num_cedula') ? document.getElementById('num_cedula').value.trim() : '';
+    const hidden = document.getElementById('cedula_hidden');
+    if (hidden) {
+        hidden.value = num ? (pref + num) : '';
+    }
+}
+
+function autoCompletarCuentaBancaria(bancoNombre) {
+    if (!bancoNombre) return;
+    const match = bancoNombre.match(/^(\d{4})/);
+    if (!match) return;
+    const cod = match[1];
+    const cta = document.getElementById('f_cuenta_bancaria');
+    if (!cta) return;
+    let digits = cta.value.replace(/\D/g, '');
+    if (digits.length <= 4) {
+        cta.value = cod;
+    } else {
+        cta.value = cod + digits.slice(4);
+    }
+    validarCuenta20(cta);
+}
+
+function validarCuenta20(el) {
+    el.value = el.value.replace(/\D/g, '').slice(0, 20);
+    const helper = document.getElementById('cuenta-helper');
+    if (helper) {
+        if (el.value.length === 20) {
+            helper.className = 'text-success fw-bold';
+            helper.textContent = '20 de 20 dígitos completados';
+        } else if (el.value.length > 0) {
+            helper.className = 'text-muted';
+            helper.textContent = el.value.length + ' / 20 dígitos (Faltan ' + (20 - el.value.length) + ')';
+        } else {
+            helper.className = 'text-muted';
+            helper.textContent = '0 / 20 dígitos';
+        }
+    }
+}
+
+function copiarDatosAPagoMovil() {
+    const b = document.getElementById('f_banco');
+    if (b && b.value) {
+        const pmB = document.getElementById('f_pago_movil_banco');
+        if (pmB) pmB.value = b.value;
+    }
+    const t = document.querySelector('#campos-dinamicos input[name="telefono"]');
+    if (t && t.value) {
+        const pmT = document.getElementById('f_pago_movil_telefono');
+        if (pmT) pmT.value = t.value;
+    }
+    const c = document.getElementById('cedula_hidden');
+    if (c && c.value) {
+        const pmC = document.getElementById('f_pago_movil_cedula');
+        if (pmC) pmC.value = c.value;
+    }
+}
+
 function abrirModal(tipo) {
+    _claveConfirmadaParaEnvio = false;
     const modal = document.getElementById('modal-crud');
     const campos = document.getElementById('campos-dinamicos');
     const id = document.getElementById('f-id');
@@ -1050,7 +1342,7 @@ function abrirModal(tipo) {
             window._PROVEEDORES.forEach(function(p) {
                 var opt = document.createElement('option');
                 opt.value = p.id;
-                opt.textContent = p.nombre;
+                opt.textContent = p.cedula ? (p.nombre + ' (' + p.cedula + ')') : p.nombre;
                 selProv.appendChild(opt);
             });
         }
@@ -1058,11 +1350,39 @@ function abrirModal(tipo) {
         accion.value = 'guardar_usuario';
         campos.innerHTML = `
             <div class="campo-form"><label>Nombre Completo</label><input type="text" name="nombre" required></div>
-            <div class="campo-form"><label>Correo Electronico</label><input type="email" name="correo" required></div>
-            <div class="campo-form"><label>Contrasena (dejar vacio al editar)</label><input type="password" name="clave" minlength="6"></div>
-            <div class="campo-form"><label>Asignar Rol</label>
-                <select name="rol"><option value="vendedor">Vendedor</option><option value="trabajador">Trabajador</option><option value="admin">Administrador</option></select></div>
-            <p style="font-size:0.8rem;color:#64748b;margin-top:0.5rem;">Cuidado: Cambiar el rol afectara los permisos de acceso.</p>`;
+            <div class="campo-form">
+                <label>Cédula de Identidad <span class="text-danger">*</span></label>
+                <div style="display:flex;gap:6px;">
+                    <select id="prefijo_cedula" style="max-width:75px;" onchange="syncCedula()">
+                        <option value="V-">V-</option>
+                        <option value="E-">E-</option>
+                    </select>
+                    <input type="text" id="num_cedula" placeholder="12345678" oninput="syncCedula()" style="font-family:monospace;" required>
+                </div>
+                <input type="hidden" name="cedula" id="cedula_hidden">
+                <small class="text-muted" style="font-size:0.72rem;">Permite diferenciar trabajadores con el mismo nombre.</small>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div class="campo-form"><label>Teléfono</label><input type="text" name="telefono" placeholder="04121234567"></div>
+                <div class="campo-form"><label>Correo Electrónico</label><input type="email" name="correo" required></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div class="campo-form">
+                    <label id="label_clave_personal">Contraseña de Acceso</label>
+                    <div style="position:relative;">
+                        <input type="password" name="clave" id="f_clave_personal" minlength="6" placeholder="Mínimo 6 caracteres" required style="width:100%;padding-right:32px;box-sizing:border-box;">
+                        <button type="button" onclick="togglePassVisibility('f_clave_personal', this)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:2px 4px;font-size:0.85rem;" title="Mostrar/Ocultar contraseña">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
+                    <small id="help_clave_personal" class="text-muted" style="font-size:0.72rem;">Clave para que el usuario inicie sesión.</small>
+                </div>
+                <div class="campo-form"><label>Asignar Rol</label>
+                    <select name="rol"><option value="vendedor">Vendedor</option><option value="trabajador">Trabajador</option><option value="admin">Administrador</option></select>
+                </div>
+            </div>
+            ${getBloqueDatosPagoHtml()}`;
+        syncCedula();
     } else if (tipo === 'Pedidos') {
         accion.value = 'guardar_pedido';
         campos.innerHTML = `
@@ -1163,20 +1483,45 @@ function abrirModal(tipo) {
                     <option value="Otro">Otro</option>
                 </select></div>
             <div class="campo-form"><label>Fecha</label><input type="date" name="fecha" style="width:100%;padding:6px 10px;border:1px solid #94a3b8;border-radius:5px;font-size:0.85rem;height:36px;box-sizing:border-box;"></div>`;
+    } else if (tipo === 'Proveedores') {
+        accion.value = 'guardar_contacto';
+        campos.innerHTML = `
+            <div class="campo-form"><label>Nombre / Razón Social</label><input type="text" name="nombre" required></div>
+            <div class="campo-form">
+                <label>Cédula / RIF <span class="text-danger">*</span></label>
+                <div style="display:flex;gap:6px;">
+                    <select id="prefijo_cedula" style="max-width:75px;" onchange="syncCedula()">
+                        <option value="J-">J-</option>
+                        <option value="V-">V-</option>
+                        <option value="G-">G-</option>
+                        <option value="E-">E-</option>
+                    </select>
+                    <input type="text" id="num_cedula" placeholder="12345678-0" oninput="syncCedula()" style="font-family:monospace;" required>
+                </div>
+                <input type="hidden" name="cedula" id="cedula_hidden">
+                <small class="text-muted" style="font-size:0.72rem;">Permite diferenciar proveedores con nombres similares.</small>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div class="campo-form"><label>Teléfono</label><input type="text" name="telefono" placeholder="04141234567"></div>
+                <div class="campo-form"><label>Correo Electrónico</label><input type="email" name="correo"></div>
+            </div>
+            <div class="campo-form"><label>Dirección</label><input type="text" name="direccion"></div>
+            <input type="hidden" name="tipo" value="Proveedor">
+            ${getBloqueDatosPagoHtml()}`;
+        syncCedula();
     } else {
         accion.value = 'guardar_contacto';
         campos.innerHTML = `
             <div class="campo-form"><label>Nombre Completo</label><input type="text" name="nombre" required></div>
-            <div class="campo-form"><label>Telefono</label><input type="text" name="telefono"></div>
-            <div class="campo-form"><label>Correo Electronico</label><input type="email" name="correo"></div>
-            ${tipo === 'Clientes' ? `
-            <div class="campo-form"><label>Categoria</label>
+            <div class="campo-form"><label>Teléfono</label><input type="text" name="telefono"></div>
+            <div class="campo-form"><label>Correo Electrónico</label><input type="email" name="correo"></div>
+            <div class="campo-form"><label>Categoría</label>
                 <select name="categoria">
                     <option value="Regular">Regular</option>
                     <option value="Negocio">Negocio</option>
-                </select></div>` : ''}
-            <div class="campo-form"><label>Direccion</label><input type="text" name="direccion"></div>
-            <input type="hidden" name="tipo" value="${tipo === 'Clientes' ? 'Cliente' : 'Proveedor'}">`;
+                </select></div>
+            <div class="campo-form"><label>Dirección</label><input type="text" name="direccion"></div>
+            <input type="hidden" name="tipo" value="Cliente">`;
     }
 }
 
@@ -1196,8 +1541,17 @@ function abrirModalPerfil() {
 
     campos.innerHTML = `
         <div class="campo-form"><label>Nombre Completo</label><input type="text" name="nombre" value="${window._USUARIO_NOMBRE}" required></div>
-        <div class="campo-form"><label>Correo Electronico</label><input type="email" name="correo" value="${window._USUARIO_CORREO}" required></div>
-        <div class="campo-form"><label>Nueva Contraseña (dejar vacio para mantener)</label><input type="password" name="clave" minlength="6"></div>
+        <div class="campo-form"><label>Correo Electrónico</label><input type="email" name="correo" value="${window._USUARIO_CORREO}" required></div>
+        <div class="campo-form">
+            <label>Nueva Contraseña <span class="text-muted fw-normal">(opcional)</span></label>
+            <div style="position:relative;">
+                <input type="password" name="clave" id="f_clave_perfil" minlength="6" placeholder="Dejar en blanco para mantener la actual" style="width:100%;padding-right:32px;box-sizing:border-box;">
+                <button type="button" onclick="togglePassVisibility('f_clave_perfil', this)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;padding:2px 4px;font-size:0.85rem;" title="Mostrar/Ocultar contraseña">
+                    <i class="bi bi-eye"></i>
+                </button>
+            </div>
+            <small class="text-muted" style="font-size:0.72rem;">Solo escribe aquí si deseas cambiar tu clave actual.</small>
+        </div>
         <p style="font-size:0.8rem;color:#64748b;margin-top:0.5rem;">No puedes cambiar tu rol desde aquí.</p>`;
 
     setTimeout(() => { const fi = campos.querySelector('input[type="text"]'); if(fi) fi.focus(); }, 100);
@@ -1259,6 +1613,37 @@ function editarRegistro(datos, tipo) {
         _autoAsignarEntrega = false;
         if (datos.tipo_entrega) toggleDireccion(datos.tipo_entrega);
         cargarItemsPedido(datos.id);
+    }
+    if (tipo === 'Personal' || tipo === 'Proveedores') {
+        if (datos.cedula) {
+            let m = String(datos.cedula).match(/^([VEJGvejg])[-_ ]?(.*)$/);
+            if (m) {
+                let pSel = document.getElementById('prefijo_cedula');
+                let nInp = document.getElementById('num_cedula');
+                if (pSel) pSel.value = m[1].toUpperCase() + '-';
+                if (nInp) nInp.value = m[2];
+            } else {
+                let nInp = document.getElementById('num_cedula');
+                if (nInp) nInp.value = datos.cedula;
+            }
+        }
+        syncCedula();
+        let cta = document.getElementById('f_cuenta_bancaria');
+        if (cta) validarCuenta20(cta);
+    }
+    if (tipo === 'Personal') {
+        const lblClave = document.getElementById('label_clave_personal');
+        const inpClave = document.getElementById('f_clave_personal');
+        const helpClave = document.getElementById('help_clave_personal');
+        if (lblClave) lblClave.innerHTML = 'Nueva Contraseña <span class="text-muted fw-normal">(opcional)</span>';
+        if (inpClave) {
+            inpClave.placeholder = 'Dejar en blanco para conservar la actual';
+            inpClave.removeAttribute('required');
+            inpClave.value = '';
+        }
+        if (helpClave) {
+            helpClave.textContent = 'Solo escribe aquí si deseas cambiar su clave de acceso.';
+        }
     }
     
     // Sincronizar todos los selects custom del form (UI)
@@ -1471,10 +1856,141 @@ async function cargarItemsPedido(id_pedido) {
 
 function cerrarModal() {
     document.getElementById('modal-crud').style.display = 'none';
+    cerrarModalClave();
+    _claveConfirmadaParaEnvio = false;
     document.body.style.overflow = '';
 }
 
 var _formPendiente = null;
+var _claveConfirmadaParaEnvio = false;
+var _onClaveExitosa = null;
+
+function abrirModalClaveConfirmacion(callback, tipo, customAccion = null) {
+    _onClaveExitosa = callback || null;
+
+    const modalClave = document.getElementById('modal-clave-seguridad');
+    const inputClave = document.getElementById('input-clave-seguridad');
+    const errorMsg = document.getElementById('error-clave-mensaje');
+    const btnTexto = document.getElementById('btn-clave-texto');
+    const btnConfirmar = document.getElementById('btn-confirmar-clave');
+    const pTexto = document.getElementById('texto-clave-seguridad');
+
+    if (!modalClave || !inputClave) return;
+
+    inputClave.value = '';
+    inputClave.type = 'password';
+    const iconEye = document.querySelector('#btn-toggle-ver-clave i');
+    if (iconEye) iconEye.className = 'bi bi-eye';
+    if (errorMsg) errorMsg.style.display = 'none';
+    if (btnConfirmar) btnConfirmar.disabled = false;
+    if (btnTexto) btnTexto.innerText = 'Confirmar';
+
+    const modulo = tipo || (document.getElementById('f-modulo') ? document.getElementById('f-modulo').value : '');
+    const nombresMod = {
+        'Productos': 'el producto',
+        'Pedidos': 'el pedido',
+        'Clientes': 'el cliente',
+        'Proveedores': 'el proveedor',
+        'Personal': 'el usuario',
+        'MateriaPrima': 'el insumo',
+        'Perdidas': 'la pérdida',
+        'Categorias': 'la categoría',
+        'Configuracion': 'la configuración',
+        'Documentos': 'el documento',
+        'Papelera': 'la papelera'
+    };
+    let sujeto = 'autorizar esta operación';
+    if (customAccion) {
+        sujeto = customAccion;
+    } else if (nombresMod[modulo]) {
+        sujeto = 'guardar ' + nombresMod[modulo];
+    }
+    if (pTexto) {
+        pTexto.innerText = 'Por seguridad, ingresa tu contraseña de usuario para ' + sujeto + ':';
+    }
+
+    modalClave.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    setTimeout(function() {
+        inputClave.focus();
+    }, 100);
+}
+
+function cerrarModalClave() {
+    _onClaveExitosa = null;
+    const modalClave = document.getElementById('modal-clave-seguridad');
+    if (modalClave) {
+        modalClave.style.display = 'none';
+    }
+    const modalCrud = document.getElementById('modal-crud');
+    if (modalCrud && modalCrud.style.display === 'flex') {
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.body.style.overflow = '';
+    }
+}
+
+async function validarClaveConfirmacion(e) {
+    e.preventDefault();
+    const inputClave = document.getElementById('input-clave-seguridad');
+    const errorMsg = document.getElementById('error-clave-mensaje');
+    const errorTexto = document.getElementById('error-clave-texto');
+    const btnConfirmar = document.getElementById('btn-confirmar-clave');
+    const btnTexto = document.getElementById('btn-clave-texto');
+
+    const clave = inputClave ? inputClave.value.trim() : '';
+    if (!clave) {
+        if (errorTexto) errorTexto.innerText = 'Por favor, ingresa tu contraseña.';
+        if (errorMsg) errorMsg.style.display = 'block';
+        if (inputClave) inputClave.focus();
+        return;
+    }
+
+    if (btnConfirmar) btnConfirmar.disabled = true;
+    if (btnTexto) btnTexto.innerHTML = '<span class="spinner-border spinner-border-sm me-1" style="width:0.8rem;height:0.8rem;"></span> Verificando...';
+    if (errorMsg) errorMsg.style.display = 'none';
+
+    try {
+        const formData = new URLSearchParams();
+        formData.append('clave', clave);
+
+        const resp = await fetch('index.php?action=ajax-verificar-clave', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString()
+        });
+
+        const data = await resp.json();
+
+        if (data && data.success) {
+            _claveConfirmadaParaEnvio = true;
+            cerrarModalClave();
+            if (_onClaveExitosa) {
+                const cb = _onClaveExitosa;
+                _onClaveExitosa = null;
+                cb();
+            } else {
+                document.getElementById('form-crud').submit();
+            }
+        } else {
+            if (btnConfirmar) btnConfirmar.disabled = false;
+            if (btnTexto) btnTexto.innerText = 'Confirmar';
+            if (errorTexto) errorTexto.innerText = (data && data.error) ? data.error : 'Contraseña incorrecta. Inténtalo de nuevo.';
+            if (errorMsg) errorMsg.style.display = 'block';
+            if (inputClave) {
+                inputClave.focus();
+                inputClave.select();
+            }
+        }
+    } catch (err) {
+        if (btnConfirmar) btnConfirmar.disabled = false;
+        if (btnTexto) btnTexto.innerText = 'Confirmar';
+        if (errorTexto) errorTexto.innerText = 'Error al comunicarse con el servidor.';
+        if (errorMsg) errorMsg.style.display = 'block';
+    }
+}
 
 function mostrarConfirmacion(mensaje, callback, isDanger = false) {
     document.getElementById('confirmacion-mensaje').innerHTML = mensaje;
@@ -1503,9 +2019,43 @@ document.addEventListener('click', function(e) {
 
 function confirmarForm(event, mensaje, isDanger = false) {
     event.preventDefault();
-    mostrarConfirmacion(mensaje, function() {
-        event.target.submit();
-    }, isDanger);
+    const form = event.target || event.currentTarget;
+    const inputAccion = form.querySelector('input[name="accion"]');
+    const accion = inputAccion ? inputAccion.value : '';
+    const inputModulo = form.querySelector('input[name="modulo"]') || form.querySelector('input[name="modulo_orig"]');
+    const modulo = inputModulo ? inputModulo.value : '';
+
+    const accionesRequierenClave = [
+        'desactivar',
+        'mover_papelera',
+        'eliminar',
+        'eliminar_perdida',
+        'eliminar_documento',
+        'eliminar_permanente',
+        'eliminar_permanente_documento',
+        'eliminar_categoria'
+    ];
+
+    if (accionesRequierenClave.includes(accion)) {
+        mostrarConfirmacion(mensaje, function() {
+            let descAccion = 'autorizar esta operación';
+            if (accion === 'desactivar') {
+                descAccion = 'desactivar este registro';
+            } else if (accion === 'mover_papelera' || accion === 'eliminar' || accion === 'eliminar_perdida' || accion === 'eliminar_documento') {
+                descAccion = 'enviar este registro a la papelera';
+            } else if (accion.startsWith('eliminar_permanente') || accion === 'eliminar_categoria') {
+                descAccion = 'eliminar definitivamente este registro';
+            }
+
+            abrirModalClaveConfirmacion(function() {
+                form.submit();
+            }, modulo, descAccion);
+        }, isDanger);
+    } else {
+        mostrarConfirmacion(mensaje, function() {
+            form.submit();
+        }, isDanger);
+    }
 }
 
 // Delegado global: intercepta todos los forms con class="form-confirmar"
@@ -1528,7 +2078,9 @@ function vaciarPapeleraConfirmar(event) {
             mostrarConfirmacion(
                 '<span style="color:#dc3545;"><i class="bi bi-x-circle-fill me-1"></i>¿Estas completamente seguro? <strong>No habra forma de recuperar estos datos</strong> una vez eliminados.</span>',
                 function() {
-                    form.submit();
+                    abrirModalClaveConfirmacion(function() {
+                        form.submit();
+                    }, 'Papelera', 'vaciar completamente la papelera');
                 },
                 true // Segundo botón en rojo también
             );
@@ -1542,22 +2094,43 @@ function confirmarToggle(event) {
     event.preventDefault();
     var input = event.target.querySelector('input[name=estado_actual]');
     if (!input) return false;
+    var form = event.target;
     var msg = input.value === 'Disponible'
         ? 'Si ocultas este producto, tus clientes ya no podrán verlo en la tienda. ¿Quieres hacerlo?'
         : '¿Restaurar este producto en el menú público?';
     mostrarConfirmacion(msg, function() {
-        event.target.submit();
+        if (input.value === 'Disponible') {
+            abrirModalClaveConfirmacion(function() {
+                form.submit();
+            }, 'Productos', 'desactivar la disponibilidad de este producto');
+        } else {
+            form.submit();
+        }
     });
     return false;
 }
 
 document.getElementById('form-crud').addEventListener('submit', function(event) {
     const accion = document.getElementById('f-accion');
+    const modulo = document.getElementById('f-modulo');
+
     if (accion && accion.value === 'guardar_pedido') {
         if (window._itemsPedido.length === 0) {
             event.preventDefault();
             mostrarConfirmacion('Debes agregar al menos un producto al pedido.', function(){});
+            return;
         }
+    }
+
+    // Modal de contraseña al agregar o guardar en cualquiera de los módulos
+    if (!_claveConfirmadaParaEnvio) {
+        event.preventDefault();
+        if (!this.checkValidity()) {
+            this.reportValidity();
+            return;
+        }
+        abrirModalClaveConfirmacion(null, modulo ? modulo.value : '');
+        return;
     }
 });
 
@@ -1594,6 +2167,52 @@ function filtrarTabla() {
         noResult.style.display = '';
     } else if (noResult) {
         noResult.style.display = 'none';
+    }
+}
+
+function filtrarTablaEstado(tipo, btn) {
+    const btns = document.querySelectorAll('.btn-filtro-estado');
+    btns.forEach(b => {
+        b.classList.remove('active', 'btn-secondary', 'btn-success');
+        if (b.getAttribute('data-filtro') === 'activos') {
+            b.classList.add('btn-outline-success');
+        } else {
+            b.classList.add('btn-outline-secondary');
+        }
+    });
+
+    if (btn) {
+        btn.classList.add('active');
+        if (tipo === 'activos') {
+            btn.classList.remove('btn-outline-success');
+            btn.classList.add('btn-success', 'text-white');
+        } else {
+            btn.classList.remove('btn-outline-secondary');
+            btn.classList.add('btn-secondary', 'text-white');
+        }
+    }
+
+    const tabla = document.getElementById('tabla-datos');
+    if (!tabla) return;
+    const rows = tabla.querySelectorAll('tbody tr[data-estado]');
+    let visibles = 0;
+    rows.forEach(r => {
+        const est = (r.getAttribute('data-estado') || '').toLowerCase().trim();
+        let mostrar = false;
+        if (tipo === 'todos') {
+            mostrar = true;
+        } else if (tipo === 'activos') {
+            mostrar = (est !== 'inactivo' && est !== 'papelera');
+        } else if (tipo === 'inactivos') {
+            mostrar = (est === 'inactivo');
+        }
+        r.style.display = mostrar ? '' : 'none';
+        if (mostrar) visibles++;
+    });
+
+    const info = document.getElementById('conteo-filtro-estado');
+    if (info) {
+        info.textContent = 'Mostrando: ' + visibles + ' registro(s)';
     }
 }
 
@@ -1648,7 +2267,7 @@ setInterval(function() {
         return;
     }
     // Evitar recargar si hay un modal abierto (ej. confirmación de borrar)
-    if (document.getElementById('modal-confirmacion').style.display === 'flex' || document.getElementById('modal-crud').style.display === 'flex') {
+    if (document.getElementById('modal-confirmacion').style.display === 'flex' || document.getElementById('modal-crud').style.display === 'flex' || (document.getElementById('modal-clave-seguridad') && document.getElementById('modal-clave-seguridad').style.display === 'flex')) {
         return;
     }
     window.location.reload();
@@ -1657,11 +2276,32 @@ setInterval(function() {
 
 // --- Listeners de Interfaz (Desacoplados del HTML) ---
 document.addEventListener('DOMContentLoaded', function() {
+    var filtroInit = document.querySelector('.btn-filtro-estado.active');
+    if (filtroInit) {
+        filtrarTablaEstado(filtroInit.getAttribute('data-filtro') || 'todos', filtroInit);
+    }
+
     var btnPerfilTop = document.getElementById('btn-perfil-top');
     if(btnPerfilTop) {
         btnPerfilTop.addEventListener('click', function(e) {
             e.preventDefault();
             abrirModalPerfil();
+        });
+    }
+
+    var formConfig = document.getElementById('form-configuracion');
+    if (formConfig) {
+        formConfig.addEventListener('submit', function(e) {
+            if (!_claveConfirmadaParaEnvio) {
+                e.preventDefault();
+                if (!this.checkValidity()) {
+                    this.reportValidity();
+                    return;
+                }
+                abrirModalClaveConfirmacion(function() {
+                    formConfig.submit();
+                }, 'Configuracion');
+            }
         });
     }
 
@@ -1672,7 +2312,238 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.btn-cerrar-confirmacion').forEach(function(btn) {
         btn.addEventListener('click', cerrarConfirmacion);
     });
+
+    document.querySelectorAll('.btn-cerrar-clave').forEach(function(btn) {
+        btn.addEventListener('click', cerrarModalClave);
+    });
+
+    var btnToggleClave = document.getElementById('btn-toggle-ver-clave');
+    if (btnToggleClave) {
+        btnToggleClave.addEventListener('click', function() {
+            var inp = document.getElementById('input-clave-seguridad');
+            var ico = this.querySelector('i');
+            if (inp.type === 'password') {
+                inp.type = 'text';
+                if (ico) ico.className = 'bi bi-eye-slash';
+            } else {
+                inp.type = 'password';
+                if (ico) ico.className = 'bi bi-eye';
+            }
+        });
+    }
+
+    var inpClave = document.getElementById('input-clave-seguridad');
+    if (inpClave) {
+        inpClave.addEventListener('input', function() {
+            var err = document.getElementById('error-clave-mensaje');
+            if (err) err.style.display = 'none';
+        });
+    }
+
+    window.addEventListener('click', function(event) {
+        var modalClave = document.getElementById('modal-clave-seguridad');
+        if (modalClave && event.target === modalClave) {
+            cerrarModalClave();
+        }
+        var modalVerPago = document.getElementById('modal-ver-pago');
+        if (modalVerPago && event.target === modalVerPago) {
+            cerrarModalVerPago();
+        }
+    });
+
+    document.querySelectorAll('.btn-cerrar-ver-pago').forEach(function(btn) {
+        btn.addEventListener('click', cerrarModalVerPago);
+    });
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            var modalClave = document.getElementById('modal-clave-seguridad');
+            if (modalClave && modalClave.style.display === 'flex') {
+                cerrarModalClave();
+            }
+            var modalVerPago = document.getElementById('modal-ver-pago');
+            if (modalVerPago && modalVerPago.style.display === 'flex') {
+                cerrarModalVerPago();
+            }
+        }
+    });
 });
+
+function verDatosPago(datos, tipo) {
+    const modal = document.getElementById('modal-ver-pago');
+    const cuerpo = document.getElementById('ver-pago-cuerpo');
+    if (!modal || !cuerpo) return;
+
+    const nombre = datos.nombre || 'Sin nombre';
+    const cedula = datos.cedula || 'No registrada';
+    const tel = datos.telefono || 'No registrado';
+    const correo = datos.correo || '-';
+    const etiquetaTipo = tipo === 'Personal' ? ('Personal (' + (datos.rol ? datos.rol.toUpperCase() : 'USUARIO') + ')') : 'Proveedor';
+
+    const banco = datos.banco || '';
+    const cuenta = datos.cuenta_bancaria || '';
+    const pmBanco = datos.pago_movil_banco || '';
+    const pmTel = datos.pago_movil_telefono || '';
+    const pmCed = datos.pago_movil_cedula || '';
+
+    const tienePago = banco || cuenta || pmBanco || pmTel || pmCed;
+
+    let html = `
+        <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h5 class="mb-0 fw-bold text-dark" style="font-size:1rem;">${escapeHtml(nombre)}</h5>
+                    <div class="mt-1 d-flex flex-wrap gap-2 align-items-center">
+                        <span class="badge bg-secondary-subtle text-secondary font-monospace" style="font-size:0.8rem;">
+                            <i class="bi bi-person-vcard me-1"></i>${escapeHtml(cedula)}
+                        </span>
+                        <span class="badge bg-primary-subtle text-primary" style="font-size:0.75rem;">${escapeHtml(etiquetaTipo)}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-2 text-muted" style="font-size:0.8rem;">
+                ${tel !== 'No registrado' ? `<span><i class="bi bi-telephone me-1"></i>${escapeHtml(tel)}</span>` : ''}
+                ${correo && correo !== '-' ? `<span class="ms-3"><i class="bi bi-envelope me-1"></i>${escapeHtml(correo)}</span>` : ''}
+            </div>
+        </div>
+    `;
+
+    if (!tienePago) {
+        html += `
+            <div class="alert alert-warning d-flex align-items-center gap-2 mb-2" style="font-size:0.82rem;">
+                <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
+                <div>Este ${tipo === 'Personal' ? 'trabajador' : 'proveedor'} aún no tiene datos de pago registrados. Pulsa en el botón de editar (lápiz) para agregarlos.</div>
+            </div>
+        `;
+    } else {
+        html += `
+            <!-- Transferencia Bancaria -->
+            <div class="card mb-2 shadow-sm border" style="font-size:0.82rem;">
+                <div class="card-header py-1 px-3 bg-light fw-bold text-dark d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-bank text-danger me-1"></i> Transferencia Bancaria</span>
+                </div>
+                <div class="card-body p-2 px-3">
+                    <div class="mb-1"><strong class="text-muted" style="font-size:0.75rem;">BANCO:</strong> <div>${banco ? escapeHtml(banco) : '<em class="text-muted">No especificado</em>'}</div></div>
+                    <div>
+                        <strong class="text-muted" style="font-size:0.75rem;">NÚMERO DE CUENTA:</strong>
+                        <div class="d-flex align-items-center justify-content-between mt-1 p-1 px-2 rounded font-monospace" style="background:#f8fafc;border:1px solid #e2e8f0;">
+                            <span style="font-weight:600;letter-spacing:1px;">${cuenta ? escapeHtml(cuenta) : '<em class="text-muted">No especificado</em>'}</span>
+                            ${cuenta ? `<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:0.75rem;" onclick="copiarTexto('${cuenta}', this)"><i class="bi bi-clipboard"></i> Copiar</button>` : ''}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pago Móvil -->
+            <div class="card mb-3 shadow-sm border" style="font-size:0.82rem;">
+                <div class="card-header py-1 px-3 bg-light fw-bold text-dark d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-phone text-primary me-1"></i> Pago Móvil</span>
+                </div>
+                <div class="card-body p-2 px-3">
+                    <div class="mb-1"><strong class="text-muted" style="font-size:0.75rem;">BANCO:</strong> <div>${pmBanco ? escapeHtml(pmBanco) : '<em class="text-muted">No especificado</em>'}</div></div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <strong class="text-muted" style="font-size:0.75rem;">TELÉFONO:</strong>
+                            <div class="d-flex align-items-center justify-content-between mt-1 p-1 px-2 rounded font-monospace" style="background:#f8fafc;border:1px solid #e2e8f0;">
+                                <span style="font-weight:600;">${pmTel ? escapeHtml(pmTel) : '<em class="text-muted">-</em>'}</span>
+                                ${pmTel ? `<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:0.7rem;" onclick="copiarTexto('${pmTel}', this)"><i class="bi bi-clipboard"></i></button>` : ''}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <strong class="text-muted" style="font-size:0.75rem;">CÉDULA / RIF:</strong>
+                            <div class="d-flex align-items-center justify-content-between mt-1 p-1 px-2 rounded font-monospace" style="background:#f8fafc;border:1px solid #e2e8f0;">
+                                <span style="font-weight:600;">${pmCed ? escapeHtml(pmCed) : '<em class="text-muted">-</em>'}</span>
+                                ${pmCed ? `<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:0.7rem;" onclick="copiarTexto('${pmCed}', this)"><i class="bi bi-clipboard"></i></button>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-primary w-100" id="btn-copiar-resumen-pago">
+                    <i class="bi bi-clipboard-check me-1"></i> Copiar Resumen de Pago Completo
+                </button>
+            </div>
+        `;
+    }
+
+    cuerpo.innerHTML = html;
+
+    const btnResumen = document.getElementById('btn-copiar-resumen-pago');
+    if (btnResumen) {
+        btnResumen.addEventListener('click', function() {
+            let txt = 'DATOS DE PAGO - TEKEFRITOS\n';
+            txt += 'Titular: ' + (nombre || '') + '\n';
+            if (cedula && cedula !== 'No registrada') txt += 'Cédula/RIF: ' + cedula + '\n';
+            if (banco) txt += 'Banco: ' + banco + '\n';
+            if (cuenta) txt += 'Cuenta: ' + cuenta + '\n';
+            if (pmBanco || pmTel || pmCed) {
+                txt += 'Pago Móvil: ' + (pmBanco || '') + ' | ' + (pmTel || '') + ' | ' + (pmCed || '') + '\n';
+            }
+            copiarTexto(txt, this);
+        });
+    }
+
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function cerrarModalVerPago() {
+    const modal = document.getElementById('modal-ver-pago');
+    if (modal) modal.style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function copiarTexto(texto, btn) {
+    if (!texto) return;
+    function exito() {
+        if (btn) {
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check2 text-success"></i> ¡Copiado!';
+            setTimeout(function() { btn.innerHTML = original; }, 1800);
+        }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(exito).catch(function() {
+            fallbackCopy(texto, exito);
+        });
+    } else {
+        fallbackCopy(texto, exito);
+    }
+}
+
+function fallbackCopy(texto, cb) {
+    const ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+        if (cb) cb();
+    } catch(e) {}
+    document.body.removeChild(ta);
+}
+
+function togglePassVisibility(inputId, btn) {
+    const inp = document.getElementById(inputId);
+    if (!inp) return;
+    const ico = btn ? btn.querySelector('i') : null;
+    if (inp.type === 'password') {
+        inp.type = 'text';
+        if (ico) ico.className = 'bi bi-eye-slash';
+    } else {
+        inp.type = 'password';
+        if (ico) ico.className = 'bi bi-eye';
+    }
+}
 </script>
 </body>
 </html>

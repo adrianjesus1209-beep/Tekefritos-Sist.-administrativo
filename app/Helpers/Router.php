@@ -41,6 +41,9 @@ function dispatch(string $action) {
         case 'ajax-tasa':
             AdminController::ajaxTasa();
             break;
+        case 'ajax-verificar-clave':
+            AdminController::ajaxVerificarClave();
+            break;
 
         // Paginas legales
         case 'politicas-privacidad':

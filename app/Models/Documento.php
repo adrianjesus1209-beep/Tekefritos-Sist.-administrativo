@@ -22,7 +22,7 @@ class Documento {
     }
 
     public static function delete(int $id) {
-        Database::query("UPDATE documentos SET estado = 'Inactivo' WHERE id = ?", [$id]);
+        Database::query("UPDATE documentos SET estado = 'Papelera' WHERE id = ?", [$id]);
     }
 
     public static function eliminarPermanente(int $id) {
